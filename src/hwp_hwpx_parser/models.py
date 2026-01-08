@@ -190,10 +190,9 @@ class MemoData:
     fill_color: Optional[str] = None
 
     def __repr__(self) -> str:
-        preview = self.text[:30] + "..." if len(self.text) > 30 else self.text
         if self.number:
-            return f"MemoData[{self.number}]({preview})"
-        return f"MemoData({preview})"
+            return f"MemoData[{self.number}]({self.text})"
+        return f"MemoData({self.text})"
 
 
 @dataclass

@@ -48,6 +48,7 @@ CTRL_ID_FOOTNOTE = _make_ctrl_id(" ", " ", "n", "f")
 CTRL_ID_ENDNOTE = _make_ctrl_id(" ", " ", "n", "e")
 CTRL_ID_HYPERLINK = _make_ctrl_id("k", "l", "h", "%")
 CTRL_ID_MEMO = _make_ctrl_id("e", "m", "%", "%")
+CTRL_ID_GSO = _make_ctrl_id(" ", "o", "s", "g")
 
 
 class HWP5Reader:
@@ -296,9 +297,11 @@ class HWP5Reader:
         texts = []
         start_level = records[memo_list_idx][1] if memo_list_idx < len(records) else 0
 
-        for i in range(memo_list_idx + 1, min(memo_list_idx + 50, len(records))):
+        for i in range(memo_list_idx + 1, len(records)):
             tag_id, level, record_data = records[i]
             if tag_id == HWPTAG_MEMO_LIST and level <= start_level:
+                break
+            if level < start_level:
                 break
             if tag_id == HWPTAG_PARA_TEXT:
                 text = self._decode_paragraph_plain(record_data)
@@ -312,11 +315,24 @@ class HWP5Reader:
         records = list(self._parse_records(data))
         ctrl_queue = []
         i = 0
+        memo_section_level = None
 
         self._hyperlink_texts = self._collect_hyperlink_texts(records)
 
         while i < len(records):
             tag_id, level, record_data = records[i]
+
+            if tag_id == HWPTAG_MEMO_LIST:
+                memo_section_level = level
+                i += 1
+                continue
+
+            if memo_section_level is not None:
+                if level < memo_section_level:
+                    memo_section_level = None
+                else:
+                    i += 1
+                    continue
 
             if tag_id == HWPTAG_CTRL_HEADER:
                 ctrl_id = self._read_ctrl_id(record_data)
@@ -384,8 +400,14 @@ class HWP5Reader:
             )
 
         self._extract_hyperlinks_from_queue(ctrl_queue, records)
+        is_image_gso = self._has_image_gso(record_data, records, para_record_idx)
         return self._decode_paragraph_text_with_markers(
-            record_data, options, footnote_positions, endnote_positions, memo_markers
+            record_data,
+            options,
+            footnote_positions,
+            endnote_positions,
+            memo_markers,
+            is_image_gso,
         )
 
     def _find_note_markers(self, data: bytes, target_ctrl_id: int) -> List[int]:
@@ -454,6 +476,7 @@ class HWP5Reader:
         footnote_positions: List[int],
         endnote_positions: List[int],
         memo_markers: Optional[List[Tuple[int, str]]] = None,
+        is_image_gso: bool = False,
     ) -> str:
         note_positions = set(footnote_positions + endnote_positions)
         memo_positions = {pos: ref_text for pos, ref_text in (memo_markers or [])}
@@ -466,6 +489,7 @@ class HWP5Reader:
         fn_start = self._footnote_counter - len(footnote_positions)
         en_start = self._endnote_counter - len(endnote_positions)
         memo_start = self._memo_counter - len(memo_markers or [])
+        gso_marker_output = False
 
         while i < len(record_data) - 1:
             code = struct.unpack_from("<H", record_data, i)[0]
@@ -516,9 +540,11 @@ class HWP5Reader:
             elif code == 10 or code == 13:
                 pass
             elif 11 <= code <= 12:
-                marker = self._handle_control_char(code, options)
-                if marker:
-                    chars.append(marker)
+                if code == 11 and not gso_marker_output and is_image_gso:
+                    marker = self._handle_control_char(code, options)
+                    if marker:
+                        chars.append(marker)
+                    gso_marker_output = True
                 i += INLINE_CTRL_EXT_SIZE
             elif code == CTRL_CHAR_FIELD:
                 if i + 4 <= len(record_data):
@@ -719,12 +745,38 @@ class HWP5Reader:
 
     def _handle_control_char(self, code: int, options: ExtractOptions) -> Optional[str]:
         if code == 11:
-            self._image_index += 1
-            image_name = self._get_image_name(self._image_index - 1)
-            return format_image_marker(
-                options.image_marker, image_name, self._image_index
-            )
+            image_name = self._get_image_name(self._image_index)
+            if image_name:
+                self._image_index += 1
+                return format_image_marker(
+                    options.image_marker, image_name, self._image_index
+                )
         return None
+
+    def _has_image_gso(
+        self,
+        record_data: bytes,
+        records: List[Tuple[int, int, bytes]],
+        para_record_idx: int,
+    ) -> bool:
+        has_code_11 = False
+        i = 0
+        while i < len(record_data) - 1:
+            code = struct.unpack_from("<H", record_data, i)[0]
+            if code == 11:
+                has_code_11 = True
+                break
+            i += 2
+
+        if not has_code_11:
+            return False
+
+        for j in range(para_record_idx + 1, min(para_record_idx + 20, len(records))):
+            tag_id, level, data = records[j]
+            if tag_id == HWPTAG_CTRL_HEADER and len(data) >= 4:
+                ctrl_id = struct.unpack_from("<I", data, 0)[0]
+                return ctrl_id == CTRL_ID_GSO
+        return False
 
     def _is_valid_char(self, code: int) -> bool:
         return (
@@ -814,6 +866,53 @@ class HWP5Reader:
                 chars.append(chr(code))
         return "".join(chars)
 
+    def _decode_paragraph_plain_for_table(self, record_data: bytes) -> str:
+        chars = []
+        i = 0
+        while i < len(record_data) - 1:
+            code = struct.unpack_from("<H", record_data, i)[0]
+            i += 2
+            if code < 8:
+                if code == 0:
+                    pass
+                elif code in (2, 3, 4):
+                    if i + 2 <= len(record_data) - 1:
+                        next_code = struct.unpack_from("<H", record_data, i)[0]
+                        if (
+                            0x0020 <= next_code <= 0x007E
+                            or 0xAC00 <= next_code <= 0xD7AF
+                            or 0x3130 <= next_code <= 0x318F
+                            or next_code in (3, 4, 13)
+                            or 15 <= next_code <= 23
+                        ):
+                            pass
+                        else:
+                            i += EXTENDED_CTRL_EXT_SIZE
+                    else:
+                        i += EXTENDED_CTRL_EXT_SIZE
+                else:
+                    i += INLINE_CTRL_EXT_SIZE
+            elif code == 9:
+                chars.append(" ")
+            elif 15 <= code <= 23:
+                if i + 2 <= len(record_data) - 1:
+                    next_code = struct.unpack_from("<H", record_data, i)[0]
+                    if (
+                        0x0020 <= next_code <= 0x007E
+                        or 0xAC00 <= next_code <= 0xD7AF
+                        or 0x3130 <= next_code <= 0x318F
+                        or next_code in (3, 4, 13)
+                        or 15 <= next_code <= 23
+                    ):
+                        pass
+                    else:
+                        i += EXTENDED_CTRL_EXT_SIZE
+                else:
+                    i += EXTENDED_CTRL_EXT_SIZE
+            elif code >= 32 and self._is_valid_char_strict(code):
+                chars.append(chr(code))
+        return "".join(chars)
+
     def _extract_tables_from_section(
         self, data: bytes, options: ExtractOptions
     ) -> List[TableData]:
@@ -885,16 +984,27 @@ class HWP5Reader:
         options: ExtractOptions,
     ) -> str:
         texts = []
-        start_level = records[start_idx][1]
+        cell_level = records[start_idx][1]
+        nested_table_level = None
 
         for i in range(start_idx + 1, len(records)):
             tag_id, level, record_data = records[i]
-            if tag_id == HWPTAG_LIST_HEADER and level <= start_level:
+            if level < cell_level:
                 break
-            if tag_id == HWPTAG_TABLE and level <= start_level:
+            if tag_id == HWPTAG_LIST_HEADER and level <= cell_level:
                 break
-            if tag_id == HWPTAG_PARA_TEXT:
-                text = self._decode_paragraph_plain(record_data)
+            if tag_id == HWPTAG_TABLE and level <= cell_level:
+                break
+            if tag_id == HWPTAG_TABLE and level > cell_level:
+                nested_table_level = level
+                continue
+            if nested_table_level is not None:
+                if level < nested_table_level:
+                    nested_table_level = None
+                else:
+                    continue
+            if tag_id == HWPTAG_PARA_TEXT and level > cell_level:
+                text = self._decode_paragraph_plain_for_table(record_data)
                 if text.strip():
                     texts.append(text.strip())
 

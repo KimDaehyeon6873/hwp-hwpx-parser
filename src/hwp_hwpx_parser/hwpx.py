@@ -416,16 +416,48 @@ class HWPXReader:
 
     def _extract_table(self, tbl_elem: ET.Element) -> TableData:
         rows = []
+        self._find_direct_rows(tbl_elem, rows)
+        return TableData(rows=rows)
 
-        for elem in tbl_elem.iter():
-            tag = self._local_name(elem.tag)
-
+    def _find_direct_rows(self, elem: ET.Element, rows: List[List[str]]) -> None:
+        for child in elem:
+            tag = self._local_name(child.tag)
             if tag == "tr":
-                row_cells = self._extract_table_row(elem)
+                row_cells = self._extract_table_row_direct(child)
                 if row_cells:
                     rows.append(row_cells)
+            elif tag != "tbl":
+                self._find_direct_rows(child, rows)
 
-        return TableData(rows=rows)
+    def _extract_table_row_direct(self, tr_elem: ET.Element) -> List[str]:
+        cells = []
+        self._find_direct_cells(tr_elem, cells)
+        return cells
+
+    def _find_direct_cells(self, elem: ET.Element, cells: List[str]) -> None:
+        for child in elem:
+            tag = self._local_name(child.tag)
+            if tag == "tc":
+                cell_text = self._extract_cell_text_direct(child)
+                cells.append(cell_text)
+            elif tag != "tbl":
+                self._find_direct_cells(child, cells)
+
+    def _extract_cell_text_direct(self, tc_elem: ET.Element) -> str:
+        texts = []
+        self._collect_text_excluding_nested_tables(tc_elem, texts)
+        return " ".join(texts).strip()
+
+    def _collect_text_excluding_nested_tables(
+        self, elem: ET.Element, texts: List[str]
+    ) -> None:
+        for child in elem:
+            tag = self._local_name(child.tag)
+            if tag == "tbl":
+                continue
+            if tag == "t" and child.text:
+                texts.append(child.text)
+            self._collect_text_excluding_nested_tables(child, texts)
 
     def _extract_table_row(self, tr_elem: ET.Element) -> List[str]:
         cells = []
