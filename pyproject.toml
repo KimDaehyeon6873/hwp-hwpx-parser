@@ -33,9 +33,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/code-yeongyu/hwp-hwpx-parser"
-Repository = "https://github.com/code-yeongyu/hwp-hwpx-parser.git"
-"Bug Tracker" = "https://github.com/code-yeongyu/hwp-hwpx-parser/issues"
+Homepage = "https://github.com/KimDaehyeon6873/hwp-hwpx-parser"
+Repository = "https://github.com/KimDaehyeon6873/hwp-hwpx-parser.git"
+"Bug Tracker" = "https://github.com/KimDaehyeon6873/hwp-hwpx-parser/issues"
 
 [tool.setuptools]
 zip-safe = false

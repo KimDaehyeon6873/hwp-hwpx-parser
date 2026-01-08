@@ -171,6 +171,6 @@ Apache License 2.0
 
 ## 관련 프로젝트
 
-- [hwp-hwpx-editor](https://github.com/code-yeongyu/hwp-hwpx-editor) - HWP/HWPX 문서 편집 라이브러리
+- [hwp-hwpx-editor](https://github.com/KimDaehyeon6873/hwp-hwpx-editor) - HWP/HWPX 문서 편집 라이브러리
 - [hwplib](https://github.com/neolord0/hwplib) - Java HWP 라이브러리 (hwp-hwpx-editor에서 사용)
 - [hwpxlib](https://github.com/neolord0/hwpxlib) - Java HWPX 라이브러리 (hwp-hwpx-editor에서 사용)
