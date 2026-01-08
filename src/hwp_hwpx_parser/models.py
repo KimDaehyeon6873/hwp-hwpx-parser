@@ -173,6 +173,8 @@ class MemoData:
 
     Attributes:
         text: Memo content
+        number: Memo number (matches [MEMO:N] marker in text)
+        referenced_text: The text that the memo is attached to
         memo_id: Memo ID
         author: Author (if available)
         width: Memo width (if available)
@@ -180,6 +182,8 @@ class MemoData:
     """
 
     text: str
+    number: Optional[int] = None
+    referenced_text: Optional[str] = None
     memo_id: Optional[str] = None
     author: Optional[str] = None
     width: Optional[int] = None
@@ -187,6 +191,8 @@ class MemoData:
 
     def __repr__(self) -> str:
         preview = self.text[:30] + "..." if len(self.text) > 30 else self.text
+        if self.number:
+            return f"MemoData[{self.number}]({preview})"
         return f"MemoData({preview})"
 
 

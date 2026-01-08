@@ -125,6 +125,7 @@ class HWPXReader:
         self._memos = []
         self._footnote_counter = 0
         self._endnote_counter = 0
+        self._memo_counter = 0
         self._memo_properties = {}
 
     def extract_text(self, options: Optional[ExtractOptions] = None) -> str:
@@ -221,39 +222,60 @@ class HWPXReader:
 
     def _extract_memos_from_element(self, root: ET.Element) -> List[MemoData]:
         memos = []
-        current_memo_id = None
-        memo_text_parts = []
-
-        for elem in root.iter():
-            tag = self._local_name(elem.tag)
-
-            if tag == "fieldBegin":
-                field_type = elem.get("type", "")
-                if field_type == "MEMO":
-                    current_memo_id = elem.get("id") or elem.get("name")
-                    memo_text_parts = []
-
-            elif tag == "t" and elem.text and current_memo_id:
-                memo_text_parts.append(elem.text)
-
-            elif tag == "fieldEnd" and current_memo_id:
-                memo_text = "".join(memo_text_parts).strip()
-                if memo_text:
-                    props = self._memo_properties.get(current_memo_id, {})
-                    memos.append(
-                        MemoData(
-                            text=memo_text,
-                            memo_id=current_memo_id,
-                            width=int(props.get("width"))
-                            if props.get("width")
-                            else None,
-                            fill_color=props.get("fillColor"),
-                        )
-                    )
-                current_memo_id = None
-                memo_text_parts = []
-
+        state = {
+            "memo_id": None,
+            "memo_content": None,
+            "memo_ref_parts": [],
+            "memo_counter": 0,
+        }
+        self._collect_memos_recursive(root, memos, state, in_memo_content=False)
         return memos
+
+    def _collect_memos_recursive(
+        self,
+        elem: ET.Element,
+        memos: List[MemoData],
+        state: Dict[str, Any],
+        in_memo_content: bool,
+    ) -> None:
+        tag = self._local_name(elem.tag)
+
+        if tag == "fieldBegin":
+            field_type = elem.get("type", "")
+            if field_type == "MEMO":
+                state["memo_id"] = elem.get("id") or elem.get("name")
+                state["memo_content"] = self._extract_memo_content(elem)
+                state["memo_ref_parts"] = []
+            for child in elem:
+                if self._local_name(child.tag) != "subList":
+                    self._collect_memos_recursive(child, memos, state, in_memo_content)
+            return
+
+        if tag == "fieldEnd" and state["memo_id"]:
+            if state["memo_content"]:
+                state["memo_counter"] += 1
+                referenced_text = "".join(state["memo_ref_parts"]).strip()
+                props = self._memo_properties.get(state["memo_id"], {})
+                memos.append(
+                    MemoData(
+                        text=state["memo_content"],
+                        number=state["memo_counter"],
+                        referenced_text=referenced_text if referenced_text else None,
+                        memo_id=state["memo_id"],
+                        width=int(props.get("width")) if props.get("width") else None,
+                        fill_color=props.get("fillColor"),
+                    )
+                )
+            state["memo_id"] = None
+            state["memo_content"] = None
+            state["memo_ref_parts"] = []
+            return
+
+        if tag == "t" and elem.text and state["memo_id"] and not in_memo_content:
+            state["memo_ref_parts"].append(elem.text)
+
+        for child in elem:
+            self._collect_memos_recursive(child, memos, state, in_memo_content)
 
     def _extract_section(self, section_file: str, options: ExtractOptions) -> str:
         zf = self._open()
@@ -301,73 +323,96 @@ class HWPXReader:
     def _extract_paragraph_text(
         self, p_elem: ET.Element, options: ExtractOptions
     ) -> str:
-        texts = []
-        current_hyperlink_id = None
-        hyperlink_text_parts = []
-        hyperlink_url = None
-        current_memo_id = None
-        memo_text_parts = []
+        state = {
+            "texts": [],
+            "hyperlink_id": None,
+            "hyperlink_parts": [],
+            "hyperlink_url": None,
+            "memo_id": None,
+            "memo_content": None,
+            "memo_ref_parts": [],
+        }
+        self._process_para_element(p_elem, options, state, in_memo_content=False)
+        return "".join(state["texts"])
 
-        for elem in p_elem.iter():
-            tag = self._local_name(elem.tag)
+    def _process_para_element(
+        self,
+        elem: ET.Element,
+        options: ExtractOptions,
+        state: Dict[str, Any],
+        in_memo_content: bool,
+    ) -> None:
+        tag = self._local_name(elem.tag)
 
-            if tag == "t" and elem.text:
-                if current_hyperlink_id:
-                    hyperlink_text_parts.append(elem.text)
-                if current_memo_id:
-                    memo_text_parts.append(elem.text)
-                texts.append(elem.text)
+        if tag == "fieldBegin":
+            field_type = elem.get("type", "")
+            if field_type == "HYPERLINK":
+                state["hyperlink_id"] = elem.get("id")
+                state["hyperlink_url"] = self._extract_hyperlink_url(elem)
+                state["hyperlink_parts"] = []
+            elif field_type == "MEMO":
+                state["memo_id"] = elem.get("id") or elem.get("name")
+                state["memo_content"] = self._extract_memo_content(elem)
+                state["memo_ref_parts"] = []
+            for child in elem:
+                if self._local_name(child.tag) != "subList":
+                    self._process_para_element(child, options, state, in_memo_content)
+            return
 
-            elif tag == "pic":
-                marker = self._extract_image_marker(elem, options)
-                if marker:
-                    texts.append(marker)
+        if tag == "fieldEnd":
+            if state["hyperlink_id"] and state["hyperlink_url"]:
+                link_text = "".join(state["hyperlink_parts"])
+                if link_text and state["hyperlink_url"]:
+                    self._hyperlinks.append((link_text, state["hyperlink_url"]))
+            state["hyperlink_id"] = None
+            state["hyperlink_parts"] = []
+            state["hyperlink_url"] = None
 
-            elif tag == "footNote":
-                note_number = self._process_footnote(elem)
-                texts.append(f"[^{note_number}]")
+            if state["memo_id"] and state["memo_content"]:
+                self._memo_counter += 1
+                memo_number = self._memo_counter
+                referenced_text = "".join(state["memo_ref_parts"]).strip()
+                props = self._memo_properties.get(state["memo_id"], {})
+                self._memos.append(
+                    MemoData(
+                        text=state["memo_content"],
+                        number=memo_number,
+                        referenced_text=referenced_text if referenced_text else None,
+                        memo_id=state["memo_id"],
+                        width=int(props.get("width")) if props.get("width") else None,
+                        fill_color=props.get("fillColor"),
+                    )
+                )
+                state["texts"].append(f"[MEMO:{memo_number}]")
+            state["memo_id"] = None
+            state["memo_content"] = None
+            state["memo_ref_parts"] = []
+            return
 
-            elif tag == "endNote":
-                note_number = self._process_endnote(elem)
-                texts.append(f"[^e{note_number}]")
+        if tag == "t" and elem.text and not in_memo_content:
+            if state["hyperlink_id"]:
+                state["hyperlink_parts"].append(elem.text)
+            if state["memo_id"]:
+                state["memo_ref_parts"].append(elem.text)
+            state["texts"].append(elem.text)
 
-            elif tag == "fieldBegin":
-                field_type = elem.get("type", "")
-                if field_type == "HYPERLINK":
-                    current_hyperlink_id = elem.get("id")
-                    hyperlink_url = self._extract_hyperlink_url(elem)
-                    hyperlink_text_parts = []
-                elif field_type == "MEMO":
-                    current_memo_id = elem.get("id") or elem.get("name")
-                    memo_text_parts = []
+        elif tag == "pic":
+            marker = self._extract_image_marker(elem, options)
+            if marker:
+                state["texts"].append(marker)
 
-            elif tag == "fieldEnd":
-                if current_hyperlink_id and hyperlink_url:
-                    link_text = "".join(hyperlink_text_parts)
-                    if link_text and hyperlink_url:
-                        self._hyperlinks.append((link_text, hyperlink_url))
-                current_hyperlink_id = None
-                hyperlink_text_parts = []
-                hyperlink_url = None
+        elif tag == "footNote":
+            note_number = self._process_footnote(elem)
+            state["texts"].append(f"[^{note_number}]")
+            return
 
-                if current_memo_id:
-                    memo_text = "".join(memo_text_parts).strip()
-                    if memo_text:
-                        props = self._memo_properties.get(current_memo_id, {})
-                        self._memos.append(
-                            MemoData(
-                                text=memo_text,
-                                memo_id=current_memo_id,
-                                width=int(props.get("width"))
-                                if props.get("width")
-                                else None,
-                                fill_color=props.get("fillColor"),
-                            )
-                        )
-                    current_memo_id = None
-                    memo_text_parts = []
+        elif tag == "endNote":
+            note_number = self._process_endnote(elem)
+            state["texts"].append(f"[^e{note_number}]")
+            return
 
-        return "".join(texts)
+        for child in elem:
+            self._process_para_element(child, options, state, in_memo_content)
 
     def _extract_table(self, tbl_elem: ET.Element) -> TableData:
         rows = []
@@ -443,6 +488,18 @@ class HWPXReader:
             if tag == "t" and elem.text:
                 texts.append(elem.text)
         return " ".join(texts).strip()
+
+    def _extract_memo_content(self, field_begin_elem: ET.Element) -> Optional[str]:
+        texts = []
+        for elem in field_begin_elem.iter():
+            tag = self._local_name(elem.tag)
+            if tag == "subList":
+                for sub_elem in elem.iter():
+                    if self._local_name(sub_elem.tag) == "t" and sub_elem.text:
+                        texts.append(sub_elem.text)
+                break
+        content = " ".join(texts).strip()
+        return content if content else None
 
     def _extract_hyperlink_url(self, field_begin_elem: ET.Element) -> Optional[str]:
         for elem in field_begin_elem.iter():

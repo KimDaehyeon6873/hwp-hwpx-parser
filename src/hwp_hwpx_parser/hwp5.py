@@ -47,6 +47,7 @@ def _make_ctrl_id(c1: str, c2: str, c3: str, c4: str) -> int:
 CTRL_ID_FOOTNOTE = _make_ctrl_id(" ", " ", "n", "f")
 CTRL_ID_ENDNOTE = _make_ctrl_id(" ", " ", "n", "e")
 CTRL_ID_HYPERLINK = _make_ctrl_id("k", "l", "h", "%")
+CTRL_ID_MEMO = _make_ctrl_id("e", "m", "%", "%")
 
 
 class HWP5Reader:
@@ -197,6 +198,7 @@ class HWP5Reader:
         self._memos = []
         self._footnote_counter = 0
         self._endnote_counter = 0
+        self._memo_counter = 0
         self._processed_hyperlinks = set()
         self._hyperlink_texts = []
 
@@ -215,9 +217,6 @@ class HWP5Reader:
             section_text = self._extract_section_text(section_data, options)
             if section_text.strip():
                 sections_text.append(section_text)
-
-            if section_idx == section_files[-1]:
-                self._extract_memos_from_section(section_data)
 
         return options.paragraph_separator.join(sections_text)
 
@@ -238,6 +237,7 @@ class HWP5Reader:
             raise ValueError("Encrypted files are not supported")
 
         memos = []
+        memo_counter = 0
         section_files = list(self._iter_sections())
         if not section_files:
             return memos
@@ -250,7 +250,13 @@ class HWP5Reader:
             if tag_id == HWPTAG_MEMO_LIST:
                 memo_text = self._extract_memo_text(records, i)
                 if memo_text.strip():
-                    memos.append(MemoData(text=memo_text.strip()))
+                    memo_counter += 1
+                    memos.append(
+                        MemoData(
+                            text=memo_text.strip(),
+                            number=memo_counter,
+                        )
+                    )
 
         return memos
 
@@ -276,7 +282,13 @@ class HWP5Reader:
             if tag_id == HWPTAG_MEMO_LIST:
                 memo_text = self._extract_memo_text(records, i)
                 if memo_text.strip():
-                    self._memos.append(MemoData(text=memo_text.strip()))
+                    self._memo_counter += 1
+                    self._memos.append(
+                        MemoData(
+                            text=memo_text.strip(),
+                            number=self._memo_counter,
+                        )
+                    )
 
     def _extract_memo_text(
         self, records: List[Tuple[int, int, bytes]], memo_list_idx: int
@@ -336,6 +348,7 @@ class HWP5Reader:
     ) -> str:
         footnote_positions = self._find_note_markers(record_data, CTRL_ID_FOOTNOTE)
         endnote_positions = self._find_note_markers(record_data, CTRL_ID_ENDNOTE)
+        memo_markers = self._find_memo_markers(record_data)
 
         for pos in footnote_positions:
             self._footnote_counter += 1
@@ -359,9 +372,20 @@ class HWP5Reader:
                 )
             )
 
+        for pos, ref_text in memo_markers:
+            self._memo_counter += 1
+            memo_text = self._find_memo_content(records, self._memo_counter)
+            self._memos.append(
+                MemoData(
+                    text=memo_text,
+                    number=self._memo_counter,
+                    referenced_text=ref_text if ref_text else None,
+                )
+            )
+
         self._extract_hyperlinks_from_queue(ctrl_queue, records)
         return self._decode_paragraph_text_with_markers(
-            record_data, options, footnote_positions, endnote_positions
+            record_data, options, footnote_positions, endnote_positions, memo_markers
         )
 
     def _find_note_markers(self, data: bytes, target_ctrl_id: int) -> List[int]:
@@ -376,21 +400,72 @@ class HWP5Reader:
             i += 2
         return positions
 
+    def _find_memo_markers(self, data: bytes) -> List[Tuple[int, str]]:
+        markers = []
+        i = 0
+        while i < len(data) - 5:
+            code = struct.unpack_from("<H", data, i)[0]
+            if code == 3:
+                ctrl_id = struct.unpack_from("<I", data, i + 2)[0]
+                if ctrl_id == CTRL_ID_MEMO:
+                    ref_text = self._extract_memo_ref_text(data, i + 14)
+                    markers.append((i, ref_text))
+            i += 2
+        return markers
+
+    def _extract_memo_ref_text(self, data: bytes, start: int) -> str:
+        chars = []
+        i = start
+        if i < len(data) - 1:
+            code = struct.unpack_from("<H", data, i)[0]
+            if code == 3:
+                i += 2
+        while i < len(data) - 1:
+            code = struct.unpack_from("<H", data, i)[0]
+            if code == 4:
+                break
+            elif code >= 32:
+                chars.append(chr(code))
+            i += 2
+        return "".join(chars)
+
+    def _skip_memo_field(self, data: bytes, start: int) -> int:
+        i = start + 14
+        if i < len(data) - 1:
+            code = struct.unpack_from("<H", data, i)[0]
+            if code == 3:
+                i += 2
+        while i < len(data) - 1:
+            code = struct.unpack_from("<H", data, i)[0]
+            if code == 4:
+                i += 14
+                if i < len(data) - 1:
+                    next_code = struct.unpack_from("<H", data, i)[0]
+                    if next_code == 4:
+                        i += 2
+                break
+            i += 2
+        return i
+
     def _decode_paragraph_text_with_markers(
         self,
         record_data: bytes,
         options: ExtractOptions,
         footnote_positions: List[int],
         endnote_positions: List[int],
+        memo_markers: Optional[List[Tuple[int, str]]] = None,
     ) -> str:
         note_positions = set(footnote_positions + endnote_positions)
+        memo_positions = {pos: ref_text for pos, ref_text in (memo_markers or [])}
         chars = []
         i = 0
         fn_count = 0
         en_count = 0
+        memo_count = 0
 
         fn_start = self._footnote_counter - len(footnote_positions)
         en_start = self._endnote_counter - len(endnote_positions)
+        memo_start = self._memo_counter - len(memo_markers or [])
 
         while i < len(record_data) - 1:
             code = struct.unpack_from("<H", record_data, i)[0]
@@ -405,11 +480,37 @@ class HWP5Reader:
                 chars.append(f"[^e{en_start + en_count}]")
                 i += 2 + EXTENDED_CTRL_EXT_SIZE
                 continue
+            elif i in memo_positions:
+                memo_count += 1
+                memo_num = memo_start + memo_count
+                ref_text = memo_positions[i]
+                chars.append(ref_text)
+                chars.append(f"[MEMO:{memo_num}]")
+                i = self._skip_memo_field(record_data, i)
+                continue
 
             i += 2
 
             if code < 8:
-                i += INLINE_CTRL_EXT_SIZE
+                if code == 0:
+                    pass
+                elif code in (2, 3, 4):
+                    if i + 2 <= len(record_data) - 1:
+                        next_code = struct.unpack_from("<H", record_data, i)[0]
+                        if (
+                            0x0020 <= next_code <= 0x007E
+                            or 0xAC00 <= next_code <= 0xD7AF
+                            or 0x3130 <= next_code <= 0x318F
+                            or next_code in (3, 4, 13)
+                            or 15 <= next_code <= 23
+                        ):
+                            pass
+                        else:
+                            i += EXTENDED_CTRL_EXT_SIZE
+                    else:
+                        i += EXTENDED_CTRL_EXT_SIZE
+                else:
+                    i += INLINE_CTRL_EXT_SIZE
             elif code == 9:
                 chars.append("\t")
             elif code == 10 or code == 13:
@@ -438,7 +539,20 @@ class HWP5Reader:
                 else:
                     i += EXTENDED_CTRL_EXT_SIZE
             elif 15 <= code <= 23:
-                i += EXTENDED_CTRL_EXT_SIZE
+                if i + 2 <= len(record_data) - 1:
+                    next_code = struct.unpack_from("<H", record_data, i)[0]
+                    if (
+                        0x0020 <= next_code <= 0x007E
+                        or 0xAC00 <= next_code <= 0xD7AF
+                        or 0x3130 <= next_code <= 0x318F
+                        or next_code in (3, 4, 13)
+                        or 15 <= next_code <= 23
+                    ):
+                        pass
+                    else:
+                        i += EXTENDED_CTRL_EXT_SIZE
+                else:
+                    i += EXTENDED_CTRL_EXT_SIZE
             elif code < 32:
                 pass
             else:
@@ -463,6 +577,19 @@ class HWP5Reader:
                         return self._extract_note_text(records, i)
         return ""
 
+    def _find_memo_content(
+        self,
+        records: List[Tuple[int, int, bytes]],
+        occurrence: int,
+    ) -> str:
+        count = 0
+        for i, (tag_id, level, record_data) in enumerate(records):
+            if tag_id == HWPTAG_MEMO_LIST:
+                count += 1
+                if count == occurrence:
+                    return self._extract_memo_text(records, i)
+        return ""
+
     def _extract_note_text(
         self, records: List[Tuple[int, int, bytes]], ctrl_record_idx: int
     ) -> str:
@@ -473,9 +600,9 @@ class HWP5Reader:
 
         for i in range(ctrl_record_idx + 1, min(ctrl_record_idx + 50, len(records))):
             tag_id, level, record_data = records[i]
-            if tag_id == HWPTAG_CTRL_HEADER and level <= start_level:
+            if level <= start_level:
                 break
-            if tag_id == HWPTAG_PARA_TEXT:
+            if tag_id == HWPTAG_PARA_TEXT and level > start_level:
                 text = self._decode_paragraph_plain(record_data)
                 if text.strip():
                     texts.append(text.strip())
@@ -601,14 +728,43 @@ class HWP5Reader:
 
     def _is_valid_char(self, code: int) -> bool:
         return (
-            0x0020 <= code <= 0x007E
-            or 0xAC00 <= code <= 0xD7AF
-            or 0x3130 <= code <= 0x318F
-            or 0x1100 <= code <= 0x11FF
-            or 0xFF00 <= code <= 0xFFEF
-            or 0x2000 <= code <= 0x206F
-            or 0x3000 <= code <= 0x303F
-            or 0x00A0 <= code <= 0x00FF
+            0x0020 <= code <= 0x007E  # Basic Latin
+            or 0x00A0 <= code <= 0x00FF  # Latin-1 Supplement
+            or 0x1100 <= code <= 0x11FF  # Hangul Jamo
+            or 0x2000 <= code <= 0x206F  # General Punctuation
+            or 0x2190 <= code <= 0x21FF  # Arrows (→, ⇨, ←, ↑, ↓)
+            or 0x2200 <= code <= 0x22FF  # Mathematical Operators (⋅, ×, ÷, ±)
+            or 0x2300 <= code <= 0x23FF  # Miscellaneous Technical
+            or 0x2460 <= code <= 0x24FF  # Enclosed Alphanumerics (①, ②, ③)
+            or 0x2500 <= code <= 0x257F  # Box Drawing
+            or 0x25A0 <= code <= 0x25FF  # Geometric Shapes (■, □, ●, ○)
+            or 0x2600 <= code <= 0x26FF  # Miscellaneous Symbols
+            or 0x3000 <= code <= 0x303F  # CJK Symbols and Punctuation
+            or 0x3130 <= code <= 0x318F  # Hangul Compatibility Jamo
+            or 0x3200 <= code <= 0x32FF  # Enclosed CJK Letters (㉠, ㉡, ㉢, ㈀)
+            or 0x4E00 <= code <= 0x9FFF  # CJK Unified Ideographs (한자)
+            or 0xAC00 <= code <= 0xD7AF  # Hangul Syllables
+            or 0xFF00 <= code <= 0xFFEF  # Halfwidth and Fullwidth Forms
+        )
+
+    def _is_valid_char_strict(self, code: int) -> bool:
+        return (
+            0x0020 <= code <= 0x007E  # Basic Latin
+            or 0x00A0 <= code <= 0x00FF  # Latin-1 Supplement
+            or 0x1100 <= code <= 0x11FF  # Hangul Jamo
+            or 0x2000 <= code <= 0x206F  # General Punctuation
+            or 0x2190 <= code <= 0x21FF  # Arrows (→, ⇨, ←, ↑, ↓)
+            or 0x2200 <= code <= 0x22FF  # Mathematical Operators (⋅, ×, ÷, ±)
+            or 0x2300 <= code <= 0x23FF  # Miscellaneous Technical
+            or 0x2460 <= code <= 0x24FF  # Enclosed Alphanumerics (①, ②, ③)
+            or 0x2500 <= code <= 0x257F  # Box Drawing
+            or 0x25A0 <= code <= 0x25FF  # Geometric Shapes (■, □, ●, ○)
+            or 0x2600 <= code <= 0x26FF  # Miscellaneous Symbols
+            or 0x3000 <= code <= 0x303F  # CJK Symbols and Punctuation
+            or 0x3130 <= code <= 0x318F  # Hangul Compatibility Jamo
+            or 0x3200 <= code <= 0x32FF  # Enclosed CJK Letters (㉠, ㉡, ㉢, ㈀)
+            or 0xAC00 <= code <= 0xD7AF  # Hangul Syllables
+            or 0xFF00 <= code <= 0xFFEF  # Halfwidth and Fullwidth Forms
         )
 
     def _decode_paragraph_plain(self, record_data: bytes) -> str:
@@ -617,10 +773,45 @@ class HWP5Reader:
         while i < len(record_data) - 1:
             code = struct.unpack_from("<H", record_data, i)[0]
             i += 2
-            if code >= 32 and self._is_valid_char(code):
-                chars.append(chr(code))
+            if code < 8:
+                if code == 0:
+                    pass
+                elif code in (2, 3, 4):
+                    if i + 2 <= len(record_data) - 1:
+                        next_code = struct.unpack_from("<H", record_data, i)[0]
+                        if (
+                            0x0020 <= next_code <= 0x007E
+                            or 0xAC00 <= next_code <= 0xD7AF
+                            or 0x3130 <= next_code <= 0x318F
+                            or next_code in (3, 4, 13)
+                            or 15 <= next_code <= 23
+                        ):
+                            pass
+                        else:
+                            i += EXTENDED_CTRL_EXT_SIZE
+                    else:
+                        i += EXTENDED_CTRL_EXT_SIZE
+                else:
+                    i += INLINE_CTRL_EXT_SIZE
             elif code == 9:
                 chars.append(" ")
+            elif 15 <= code <= 23:
+                if i + 2 <= len(record_data) - 1:
+                    next_code = struct.unpack_from("<H", record_data, i)[0]
+                    if (
+                        0x0020 <= next_code <= 0x007E
+                        or 0xAC00 <= next_code <= 0xD7AF
+                        or 0x3130 <= next_code <= 0x318F
+                        or next_code in (3, 4, 13)
+                        or 15 <= next_code <= 23
+                    ):
+                        pass
+                    else:
+                        i += EXTENDED_CTRL_EXT_SIZE
+                else:
+                    i += EXTENDED_CTRL_EXT_SIZE
+            elif code >= 32 and self._is_valid_char(code):
+                chars.append(chr(code))
         return "".join(chars)
 
     def _extract_tables_from_section(
