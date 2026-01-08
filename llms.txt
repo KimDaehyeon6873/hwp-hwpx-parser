@@ -1,0 +1,218 @@
+# HWP-HWPX Parser - LLM Reference
+
+## Overview
+
+hwp-hwpx-parser is a pure Python library for reading HWP (Korean word processor) and HWPX files.
+No JVM or Java installation required. Read-only - for editing, use hwp-hwpx-editor.
+
+## Installation
+
+```bash
+pip install hwp-hwpx-parser
+```
+
+## Quick Start
+
+```python
+from hwp_hwpx_parser import Reader
+
+with Reader("document.hwp") as r:
+    print(r.text)           # Full text
+    print(r.tables)         # List of TableData
+    print(r.get_memos())    # List of MemoData
+```
+
+## Core Classes
+
+### Reader (Unified Reader)
+
+```python
+from hwp_hwpx_parser import Reader, FileType
+
+with Reader("document.hwp") as r:
+    # Properties
+    r.text                  # str - Full extracted text
+    r.tables                # List[TableData] - All tables
+    r.file_type             # FileType.HWP5 or FileType.HWPX
+    r.is_valid              # bool
+    r.is_encrypted          # bool
+    
+    # Methods
+    r.extract_text(options)              # str
+    r.extract_text_with_notes(options)   # ExtractResult
+    r.get_tables(options)                # List[TableData]
+    r.get_memos()                        # List[MemoData]
+    r.get_tables_as_markdown()           # List[str]
+    r.get_tables_as_csv(delimiter=",")   # List[str]
+```
+
+### Individual Readers
+
+```python
+from hwp_hwpx_parser import HWP5Reader, HWPXReader
+
+# HWP 5.0 files
+with HWP5Reader("file.hwp") as r:
+    text = r.extract_text()
+
+# HWPX files  
+with HWPXReader("file.hwpx") as r:
+    text = r.extract_text()
+```
+
+### Convenience Functions
+
+```python
+from hwp_hwpx_parser import read, extract_hwp5, extract_hwpx
+
+# read() returns Reader instance
+reader = read("document.hwp")
+print(reader.text)
+reader.close()
+
+# Direct extraction
+text = extract_hwp5("document.hwp")  # Returns str or empty
+text = extract_hwpx("document.hwpx")  # Returns str or empty
+```
+
+## Data Models
+
+### ExtractOptions
+
+```python
+from hwp_hwpx_parser import ExtractOptions, TableStyle, ImageMarkerStyle
+
+options = ExtractOptions(
+    table_style=TableStyle.MARKDOWN,      # MARKDOWN, CSV, INLINE
+    table_delimiter=",",                   # For CSV
+    image_marker=ImageMarkerStyle.SIMPLE,  # NONE, SIMPLE, WITH_NAME
+    paragraph_separator="\n\n",
+    line_separator="\n",
+    include_empty_paragraphs=False,
+)
+```
+
+### TableData
+
+```python
+from hwp_hwpx_parser import TableData
+
+table: TableData
+table.rows          # List[List[str]] - 2D array
+table.row_count     # int
+table.col_count     # int
+table.to_markdown() # str
+table.to_csv(",")   # str
+table.to_inline()   # str (all cells joined by space)
+```
+
+### ExtractResult
+
+```python
+from hwp_hwpx_parser import ExtractResult, NoteData, MemoData
+
+result = reader.extract_text_with_notes()
+
+result.text         # str - Text with markers [^1], [^e1]
+result.footnotes    # List[NoteData]
+result.endnotes     # List[NoteData]
+result.hyperlinks   # List[Tuple[str, str]] - (text, url)
+result.memos        # List[MemoData]
+result.notes        # List[NoteData] - footnotes + endnotes
+result.get_note(1)  # Find note by number
+```
+
+### NoteData
+
+```python
+note: NoteData
+note.note_type  # "footnote" or "endnote"
+note.number     # int (matches [^N] marker)
+note.text       # str
+```
+
+### MemoData
+
+```python
+memo: MemoData
+memo.text        # str
+memo.memo_id     # Optional[str]
+memo.author      # Optional[str]
+memo.width       # Optional[int]
+memo.fill_color  # Optional[str]
+```
+
+### HyperlinkData
+
+```python
+link: HyperlinkData
+link.text  # str - Display text
+link.url   # str - URL
+```
+
+## Common Patterns
+
+### Extract all text from HWP/HWPX
+
+```python
+from hwp_hwpx_parser import Reader
+
+with Reader("document.hwp") as r:
+    full_text = r.text
+```
+
+### Get tables as markdown
+
+```python
+from hwp_hwpx_parser import Reader
+
+with Reader("document.hwp") as r:
+    for md in r.get_tables_as_markdown():
+        print(md)
+```
+
+### Extract text with footnotes
+
+```python
+from hwp_hwpx_parser import Reader
+
+with Reader("document.hwp") as r:
+    result = r.extract_text_with_notes()
+    print(result.text)  # Contains [^1], [^2] markers
+    for fn in result.footnotes:
+        print(f"[{fn.number}] {fn.text}")
+```
+
+### Check if file is encrypted
+
+```python
+from hwp_hwpx_parser import Reader
+
+with Reader("document.hwp") as r:
+    if r.is_encrypted:
+        print("Cannot read encrypted file")
+```
+
+## File Format Support
+
+| Feature | HWP | HWPX |
+|---------|-----|------|
+| Text extraction | Yes | Yes |
+| Tables | Yes | Yes |
+| Footnotes | Yes | Yes |
+| Endnotes | Yes | Yes |
+| Hyperlinks | Yes | Yes |
+| Memos | Yes | Yes |
+| Encryption detection | Yes | Yes |
+
+## Limitations
+
+- Read-only (no editing capabilities)
+- For editing, use hwp-hwpx-editor package
+- Encrypted files cannot be read
+
+## Dependencies
+
+- olefile>=0.46 (for HWP binary format)
+- Python 3.8+
+- No Java/JVM required
