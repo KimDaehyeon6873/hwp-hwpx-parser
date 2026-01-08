@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hwp-hwpx-parser"
-version = "0.1.0"
+version = "0.1.1"
 description = "순수 Python HWP/HWPX 파서 - JVM 없이 텍스트, 표, 각주, 메모 추출"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.8"
 authors = [
-    {name = "YeonGyu Kim", email = "code.yeongyu@gmail.com"},
+    {name = "Daehyeon Kim", email = "qwertypotter@gachon.ac.kr"},
 ]
 keywords = ["hwp", "hwpx", "korean", "word-processor", "parser", "text-extraction"]
 classifiers = [
