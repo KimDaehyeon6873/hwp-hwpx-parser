@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hwp-hwpx-parser"
-version = "0.1.1"
+version = "0.1.2"
 description = "순수 Python HWP/HWPX 파서 - JVM 없이 텍스트, 표, 각주, 메모 추출"
 readme = "README.md"
 license = "Apache-2.0"

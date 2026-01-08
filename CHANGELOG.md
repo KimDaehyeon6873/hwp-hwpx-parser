@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2025-01-08
+
+### Fixed
+- HWP5 `[IMAGE]` 마커가 테이블에도 잘못 출력되던 문제 수정
+  - GSO 컨트롤 타입 구분: ` osg` (이미지) vs ` lbt` (테이블)
+  - `_has_image_gso()` 메서드 추가로 이미지 GSO만 정확히 식별
+- HWP5 메모 추출 시 고정 레코드 수(50개) 제한 제거
+  - level 기반 종료 조건으로 긴 메모도 완전히 추출
+- HWP5 메모 내용이 본문에 중복 출력되던 문제 수정
+  - `HWPTAG_MEMO_LIST` 섹션 스킵 로직 추가
+
+### Changed
+- 기술 문서(TECHNICAL.md) GSO 처리 로직 상세 설명 추가
+  - CTRL_ID 구분 (` osg`, ` lbt`)
+  - HWPTAG_SHAPE_COMPONENT, HWPTAG_SHAPE_COMPONENT_PICTURE 설명
+
+---
+
 ## [Unreleased]
 
 ### Added
