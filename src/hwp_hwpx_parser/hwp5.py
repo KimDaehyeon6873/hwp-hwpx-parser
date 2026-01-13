@@ -555,13 +555,10 @@ class HWP5Reader:
                         CTRL_ID_HYPERLINK,
                     ):
                         i += EXTENDED_CTRL_EXT_SIZE
+                    elif self._is_valid_ctrl_id(ctrl_id):
+                        i += EXTENDED_CTRL_EXT_SIZE
                     else:
-                        next_note = min(
-                            (p for p in note_positions if p > i - 2),
-                            default=len(record_data),
-                        )
-                        skip = min(EXTENDED_CTRL_EXT_SIZE, next_note - i)
-                        i += skip
+                        pass
                 else:
                     i += EXTENDED_CTRL_EXT_SIZE
             elif 15 <= code <= 23:
@@ -777,6 +774,13 @@ class HWP5Reader:
                 ctrl_id = struct.unpack_from("<I", data, 0)[0]
                 return ctrl_id == CTRL_ID_GSO
         return False
+
+    def _is_valid_ctrl_id(self, ctrl_id: int) -> bool:
+        for j in range(4):
+            byte = (ctrl_id >> (8 * j)) & 0xFF
+            if not (0x20 <= byte <= 0x7E):
+                return False
+        return True
 
     def _is_valid_char(self, code: int) -> bool:
         return (
