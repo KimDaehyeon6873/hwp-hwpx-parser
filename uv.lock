@@ -1010,7 +1010,6 @@ wheels = [
 
 [[package]]
 name = "hwp-hwpx-parser"
-version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "olefile" },

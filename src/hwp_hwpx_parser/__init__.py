@@ -13,7 +13,12 @@ JVM 없이 HWP/HWPX 파일에서 텍스트, 표, 각주, 미주, 메모를 추�
     pip install hwp-hwpx-editor
 """
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import version
+
+    __version__ = version("hwp-hwpx-parser")
+except Exception:
+    __version__ = "0.0.0"
 
 from .models import (
     ExtractOptions,

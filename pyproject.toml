@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "hwp-hwpx-parser"
-version = "0.1.2"
+dynamic = ["version"]
 description = "순수 Python HWP/HWPX 파서 - JVM 없이 텍스트, 표, 각주, 메모 추출"
 readme = "README.md"
 license = "Apache-2.0"
@@ -108,3 +108,7 @@ exclude_lines = [
     "raise AssertionError",
     "raise NotImplementedError",
 ]
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
