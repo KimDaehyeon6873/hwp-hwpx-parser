@@ -2,247 +2,178 @@
 
 이 문서는 hwp-hwpx-parser 라이브러리를 PyPI에 배포하는 방법을 설명합니다.
 
-## 📋 배포 전 준비사항
+## 버전 동기화 (중요)
 
-### 1. 필수 파일들 확인
-- [x] `pyproject.toml` - 프로젝트 설정
-- [x] `README.md` - 프로젝트 설명
-- [x] `LICENSE` - 라이선스 파일
-- [x] `src/hwp_parser/jars/*.jar` - Java 라이브러리 파일들
-- [x] `.gitignore` - Git 무시 파일
-- [x] `MANIFEST.in` - 배포 파일 지정
+**hwp-hwpx-parser**와 **hwp-hwpx-editor**는 항상 동일한 버전으로 배포합니다.
 
-### 2. PyPI 계정 준비
-1. [PyPI](https://pypi.org/) 계정 생성
-2. [TestPyPI](https://test.pypi.org/) 계정 준비 (테스트용)
-3. API 토큰 생성 (Settings > API tokens)
-
-### 3. 배포 도구 설치
-```bash
-pip install build twine
+```
+parser v0.1.4  ←→  editor v0.1.4
 ```
 
-## 🚀 배포 방법
+릴리스 순서:
+1. **parser 먼저 배포** (`git tag v0.1.4` → push)
+2. **editor 동일 버전 배포** (`git tag v0.1.4` → push)
 
-### 방법 1: 자동 배포 스크립트 사용 (권장)
+## 버전 관리
 
-#### TestPyPI에 테스트 배포
+이 프로젝트는 **setuptools-scm**을 사용하여 git tag 기반으로 버전을 자동 관리합니다.
+
+- 버전은 `pyproject.toml`이나 코드에 하드코딩되지 않음
+- git tag가 버전이 됨 (예: `v0.1.4` → 버전 `0.1.4`)
+- 개발 중에는 자동으로 dev 버전 생성 (예: `0.1.5.dev3`)
+
+## 배포 방법
+
+### 방법 1: GitHub Actions 자동 배포 (권장)
+
+git tag를 push하면 GitHub Actions가 자동으로 테스트 및 PyPI 배포를 수행합니다.
+
 ```bash
-python scripts/publish.py --all
-# 또는
-python scripts/publish.py
+# 1. 변경사항 커밋
+git add .
+git commit -m "Release v0.1.4"
+
+# 2. 태그 생성
+git tag v0.1.4
+
+# 3. 태그 푸시 (자동 배포 트리거)
+git push origin main
+git push origin v0.1.4
 ```
 
-#### 개별 단계 실행
-```bash
-# 1. 빌드 artifacts 정리
-python scripts/publish.py --clean
+### GitHub 설정 (최초 1회)
 
-# 2. 배포 전제 조건 확인
-python scripts/publish.py --check
+#### Trusted Publisher 설정 (권장)
 
-# 3. 패키지 빌드
-python scripts/publish.py --build
+PyPI의 Trusted Publisher를 사용하면 API 토큰 없이 안전하게 배포할 수 있습니다.
 
-# 4. 빌드된 패키지 테스트
-python scripts/publish.py --test
+1. [PyPI](https://pypi.org/) 로그인
+2. 프로젝트 → Settings → Publishing
+3. "Add a new pending publisher" 클릭
+4. 다음 정보 입력:
+   - Owner: `KimDaehyeon6873`
+   - Repository: `hwp-hwpx-parser`
+   - Workflow name: `publish.yml`
+   - Environment: `pypi`
 
-# 5. TestPyPI 업로드
-python scripts/publish.py --upload --test-pypi
+#### 또는 API Token 방식
 
-# 6. 실제 PyPI 업로드
-python scripts/publish.py --upload
+1. PyPI에서 API token 생성
+2. GitHub → Settings → Secrets and variables → Actions
+3. `PYPI_API_TOKEN` 시크릿 추가
+4. `.github/workflows/publish.yml` 수정:
+
+```yaml
+- name: Publish to PyPI
+  uses: pypa/gh-action-pypi-publish@release/v1
+  with:
+    password: ${{ secrets.PYPI_API_TOKEN }}
 ```
 
 ### 방법 2: 수동 배포
 
-#### 1. 빌드
-```bash
-# 빌드 artifacts 정리
-rm -rf build/ dist/ *.egg-info/
+로컬에서 직접 배포해야 하는 경우:
 
-# 패키지 빌드
+```bash
+# 1. 빌드 도구 설치
+pip install build twine
+
+# 2. 빌드 artifacts 정리
+rm -rf build/ dist/ src/*.egg-info/
+
+# 3. 패키지 빌드
 python -m build
-```
 
-#### 2. 빌드 결과 확인
-```bash
-ls -la dist/
-# hwp_hwpx_parser-0.1.0.tar.gz
-# hwp_hwpx_parser-0.1.0-py3-none-any.whl
-```
-
-#### 3. TestPyPI에 업로드 (테스트)
-```bash
-python -m twine upload --repository testpypi dist/*
-# 사용자명: __token__
-# 비밀번호: pypi-xxx... (API 토큰)
-```
-
-#### 4. TestPyPI 설치 테스트
-```bash
-# 테스트 환경 생성
-python -m venv test_env
-source test_env/bin/activate  # Windows: test_env\Scripts\activate
-
-# TestPyPI에서 설치
-pip install -i https://test.pypi.org/simple/ hwp-hwpx-parser
-
-# 테스트
-python -c "from hwp_parser import HWPParser; print('설치 성공!')"
-```
-
-#### 5. 실제 PyPI에 업로드
-```bash
+# 4. PyPI 업로드
 python -m twine upload dist/*
 ```
 
-## 📦 배포 파일 구조
+## 배포 워크플로우
 
 ```
-dist/
-├── hwp_hwpx_parser-0.1.0.tar.gz          # 소스 배포판
-└── hwp_hwpx_parser-0.1.0-py3-none-any.whl  # wheel 배포판
+코드 작성 → commit → push
+    ↓
+릴리스 준비 완료
+    ↓
+git tag v0.1.4 → git push origin v0.1.4
+    ↓
+GitHub Actions 자동 실행
+    ↓
+테스트 (Python 3.9, 3.10, 3.11, 3.12)
+    ↓
+PyPI 자동 배포
 ```
 
-## 🔍 배포 설정 상세
+## 버전 확인
+
+```python
+# 설치된 패키지 버전 확인
+import hwp_hwpx_parser
+print(hwp_hwpx_parser.__version__)
+```
+
+```bash
+# CLI에서 확인
+pip show hwp-hwpx-parser
+```
+
+## 프로젝트 구조
+
+```
+pyproject.toml          # setuptools-scm 설정 포함
+src/
+  hwp_hwpx_parser/
+    __init__.py         # importlib.metadata로 버전 읽기
+    ...
+.github/
+  workflows/
+    publish.yml         # 자동 배포 워크플로우
+```
 
 ### pyproject.toml 설정
+
 ```toml
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "hwp-hwpx-parser"
-version = "0.1.0"
-dependencies = ["JPype1>=1.4.0"]
+dynamic = ["version"]  # 버전은 git tag에서 자동 추출
 
-[tool.setuptools.package-data]
-"hwp_parser" = ["jars/*.jar"]  # JAR 파일들 포함
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
 ```
 
-### MANIFEST.in 설정
-```
-include README.md
-include LICENSE
-include jars/*.jar              # JAR 파일들
-recursive-include src/hwp_parser *.jar
-global-exclude *.pyc            # Python 캐시 파일 제외
-prune ref/                      # 참조 폴더 제외
-prune .git/                     # Git 파일들 제외
-```
+### __init__.py 버전 코드
 
-### .gitignore 설정
-```
-# 참조 파일들 (배포 제외)
-ref/
-
-# 빌드 artifacts
-build/
-dist/
-*.egg-info/
-
-# Python 캐시
-__pycache__/
-*.pyc
+```python
+try:
+    from importlib.metadata import version
+    __version__ = version("hwp-hwpx-parser")
+except Exception:
+    __version__ = "0.0.0"
 ```
 
-## 🧪 배포 테스트
-
-### 1. 로컬 설치 테스트
-```bash
-# wheel 파일로 로컬 설치
-pip install dist/hwp_hwpx_parser-0.1.0-py3-none-any.whl
-
-# 기본 기능 테스트
-python -c "
-from hwp_parser import HWPParser, extract_text_from_hwp
-print('✓ Import 성공')
-
-parser = HWPParser()
-print('✓ Parser 생성 성공')
-"
-```
-
-### 2. JAR 파일 확인
-```bash
-python -c "
-import hwp_parser
-import os
-jar_dir = os.path.join(os.path.dirname(hwp_parser.__file__), 'jars')
-jars = [f for f in os.listdir(jar_dir) if f.endswith('.jar')]
-print(f'✓ 포함된 JAR 파일들: {jars}')
-"
-```
-
-## 🚨 문제 해결
-
-### JAR 파일이 포함되지 않는 경우
-```bash
-# pyproject.toml에서 패키지 데이터 설정 확인
-[tool.setuptools.package-data]
-"hwp_parser" = ["jars/*.jar"]
-
-# MANIFEST.in에 JAR 파일 포함 확인
-include jars/*.jar
-recursive-include src/hwp_parser *.jar
-```
-
-### 빌드 실패시
-```bash
-# 캐시 정리
-rm -rf build/ dist/ *.egg-info/
-find . -name "*.pyc" -delete
-find . -name "__pycache__" -type d -exec rm -rf {} +
-
-# 다시 빌드
-python -m build
-```
-
-### 업로드 실패시
-```bash
-# API 토큰 확인
-# __token__ 형식으로 사용자명 입력
-# pypi-xxx... 형식으로 API 토큰 입력
-
-# TestPyPI에 다시 시도
-python -m twine upload --repository testpypi dist/*
-```
-
-## 📋 체크리스트
+## 체크리스트
 
 ### 배포 전 확인사항
 - [ ] 모든 테스트 통과 (`pytest`)
-- [ ] 코드 포맷팅 완료 (`black`, `isort`)
-- [ ] 타입 체크 통과 (`mypy`)
-- [ ] 문서화 완료 (`README.md` 업데이트)
-- [ ] 버전 번호 올바름
-- [ ] JAR 파일들이 `src/hwp_parser/jars/`에 있음
-- [ ] `.gitignore`에 `ref/` 폴더 제외됨
+- [ ] README.md 업데이트 (필요시)
+- [ ] CHANGELOG.md 업데이트 (필요시)
 
-### TestPyPI 테스트 후 확인사항
-- [ ] TestPyPI에서 설치 가능
-- [ ] 기본 import 작동
-- [ ] 주요 기능 작동
-- [ ] JAR 파일들 정상 로드
+### 릴리스 절차
+- [ ] 변경사항 커밋 완료
+- [ ] main 브랜치에 push 완료
+- [ ] git tag 생성 (`git tag vX.Y.Z`)
+- [ ] tag push (`git push origin vX.Y.Z`)
+- [ ] GitHub Actions 성공 확인
+- [ ] PyPI에서 새 버전 확인
 
-### 실제 배포 전 최종 확인
-- [ ] 버전 번호가 최종본
-- [ ] README.md 내용 완전
-- [ ] 라이선스 정보 정확
-- [ ] 모든 테스트 통과
-
-## 🔗 관련 링크
+## 관련 링크
 
 - [PyPI 프로젝트 페이지](https://pypi.org/project/hwp-hwpx-parser/)
-- [TestPyPI 프로젝트 페이지](https://test.pypi.org/project/hwp-hwpx-parser/)
-- [PyPI 배포 가이드](https://packaging.python.org/tutorials/packaging-projects/)
-- [Twine 문서](https://twine.readthedocs.io/)
-
-## 📞 지원
-
-배포 관련 문제가 발생하면 다음을 확인하세요:
-1. [PyPI 도움말](https://pypi.org/help/)
-2. [Twine GitHub Issues](https://github.com/pypa/twine/issues)
-3. 프로젝트 Issues 페이지
+- [GitHub Actions 워크플로우](.github/workflows/publish.yml)
+- [setuptools-scm 문서](https://setuptools-scm.readthedocs.io/)
+- [PyPI Trusted Publishers](https://docs.pypi.org/trusted-publishers/)
