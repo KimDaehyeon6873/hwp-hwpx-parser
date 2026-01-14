@@ -204,6 +204,27 @@ if code == 17:
 - ` osg` (GSO 컨테이너): 이미지, 도형 등 그래픽 객체. 하위에 `SHAPE_COMPONENT` 및 `SHAPE_COMPONENT_PICTURE` 레코드가 따릅니다.
 - ` lbt` (표): 표 객체. 하위에 `LIST_HEADER`와 셀 데이터가 따릅니다.
 
+### 3.6 각주/미주 본문 분리 처리
+
+HWP 파일에서 각주/미주 내용은 레코드 구조상 본문 레코드 사이에 중첩되어 있습니다:
+
+```
+HWPTAG_PARA_TEXT (본문 "...[^1]...")    level=0
+HWPTAG_CTRL_HEADER (ftno - 각주)        level=0
+  HWPTAG_PARA_TEXT (각주 내용)          level=1  ← 본문에서 제외해야 함
+HWPTAG_PARA_TEXT (다음 본문)            level=0
+```
+
+**처리 방식:**
+- `CTRL_HEADER`에서 `CTRL_ID_FOOTNOTE` 또는 `CTRL_ID_ENDNOTE` 감지 시 해당 레벨 기록
+- 해당 레벨보다 깊은(level > note_section_level) 레코드는 본문에서 스킵
+- 레벨이 돌아오면(level <= note_section_level) 스킵 종료
+
+**결과:**
+- 본문(`text`)에는 마커(`[^1]`, `[^e1]`)만 포함
+- 각주/미주 내용은 `footnotes`, `endnotes` 리스트에만 저장
+- HWPX 파싱 결과와 일관성 유지
+
 ---
 
 ## 4. 공통 데이터 모델
@@ -239,6 +260,52 @@ if code == 17:
 2. 이후 나타나는 `HWPTAG_LIST_HEADER` 레코드를 통해 각 셀의 시작을 감지합니다.
 3. 각 셀 내의 `HWPTAG_PARA_TEXT`를 수집하여 셀 텍스트를 구성합니다.
 4. 추출된 데이터를 `TableData` 모델로 변환하여 Markdown, CSV 등의 형식으로 출력할 수 있습니다.
+
+### 5.3 표 내 각주/미주 처리
+
+표 셀 내에 각주/미주가 포함된 경우 특별한 처리가 필요합니다.
+
+**문제점 (이전 버전):**
+- 각주/미주 내용이 셀 텍스트에 인라인으로 삽입됨
+- HWP5에서 셀 순서가 역전되는 문제 발생
+
+**해결 방식:**
+
+#### HWPX
+`_collect_cell_text_with_notes()` 함수에서 `footNote`, `endNote` 요소를 만나면:
+1. 해당 노트를 처리하여 번호 할당 및 내용 추출
+2. 셀 텍스트에는 마커(`[^N]`, `[^eN]`)만 삽입
+3. 노트 내용은 `footnotes`, `endnotes` 리스트에 저장
+
+```python
+if tag == "footNote":
+    note_number = self._process_footnote(elem)
+    texts.append(f"[^{note_number}]")
+    return
+```
+
+#### HWP5
+`_extract_table_at()` 및 `_extract_cell_text()`에서:
+1. `CTRL_HEADER`가 `CTRL_ID_FOOTNOTE` 또는 `CTRL_ID_ENDNOTE`인 경우 해당 섹션 스킵
+2. `_decode_cell_paragraph_with_markers()`로 셀 텍스트 디코딩 시 마커 삽입
+3. 노트 내용은 별도 처리하여 `footnotes`, `endnotes` 리스트에 저장
+
+```python
+# 테이블 추출 시 노트 섹션의 LIST_HEADER를 셀로 오인하지 않도록 처리
+if cell_tag == HWPTAG_CTRL_HEADER:
+    ctrl_id = self._read_ctrl_id(cell_data)
+    if ctrl_id in (CTRL_ID_FOOTNOTE, CTRL_ID_ENDNOTE):
+        note_section_level = cell_level
+        continue
+```
+
+**결과:**
+```markdown
+| 4 구간의 이각 변화[^e1]를 모두 옳게 서술한 경우 | 100 % |
+```
+- 셀에는 마커만 포함
+- 셀 순서 정상 유지
+- 노트 내용은 문서 하단에 별도 출력
 
 ### 5.3 중첩 필드 및 제어 코드 처리
 HWP 파일은 필드 내에 또 다른 필드가 존재하거나, 제어 코드가 복합적으로 나타날 수 있습니다. 파서는 상태 머신(State Machine) 또는 큐(Queue)를 사용하여 현재 처리 중인 하이퍼링크나 메모의 상태를 관리하며 데이터를 정확히 매칭합니다.
