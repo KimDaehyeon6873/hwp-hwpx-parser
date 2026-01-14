@@ -4,7 +4,7 @@ import struct
 import zlib
 import logging
 from pathlib import Path
-from typing import Optional, List, Tuple, Union
+from typing import Optional, List, Tuple, Union, Dict
 
 try:
     import olefile
@@ -316,6 +316,10 @@ class HWP5Reader:
         ctrl_queue = []
         i = 0
         memo_section_level = None
+        note_section_level = None  # 각주/미주 섹션 레벨 추적
+
+        # 표 영역을 미리 파악
+        table_ranges = self._find_table_ranges(records)
 
         self._hyperlink_texts = self._collect_hyperlink_texts(records)
 
@@ -334,8 +338,35 @@ class HWP5Reader:
                     i += 1
                     continue
 
+            # 각주/미주 섹션 내부 스킵 (본문에서 분리)
+            if note_section_level is not None:
+                if level <= note_section_level:
+                    note_section_level = None  # 섹션 종료
+                else:
+                    i += 1
+                    continue  # 각주/미주 내용 스킵
+
+            if i in table_ranges:
+                table_start, table_end = table_ranges[i]
+                table_data = self._extract_table_at(records, table_start, options)
+                if table_data and table_data.rows:
+                    table_text = table_data.format(
+                        options.table_style, options.table_delimiter
+                    )
+                    # 테이블 전후에 빈 줄 추가 (HWPX와 동일한 구조)
+                    paragraphs.append("")
+                    paragraphs.append(table_text)
+                    paragraphs.append("")
+
+                # 표 범위 건너뛰기
+                i = table_end + 1
+                continue
+
             if tag_id == HWPTAG_CTRL_HEADER:
                 ctrl_id = self._read_ctrl_id(record_data)
+                # 각주/미주 섹션 시작 감지
+                if ctrl_id in (CTRL_ID_FOOTNOTE, CTRL_ID_ENDNOTE):
+                    note_section_level = level
                 ctrl_queue.append((ctrl_id, i))
 
             elif tag_id == HWPTAG_PARA_TEXT:
@@ -353,6 +384,111 @@ class HWP5Reader:
         if len(record_data) >= 4:
             return struct.unpack_from("<I", record_data, 0)[0]
         return 0
+
+    def _find_table_ranges(
+        self, records: List[Tuple[int, int, bytes]]
+    ) -> Dict[int, Tuple[int, int]]:
+        """표의 시작과 끝 인덱스를 미리 계산"""
+        table_ranges = {}
+        i = 0
+
+        while i < len(records):
+            tag_id, level, record_data = records[i]
+
+            if tag_id == HWPTAG_TABLE:
+                table_start = i
+                parsed = self._parse_table_record(record_data)
+
+                if parsed:
+                    rows, cols, row_counts = parsed
+                    total_cells = sum(row_counts)
+
+                    # 모든 셀(LIST_HEADER)을 찾을 때까지 진행
+                    cells_found = 0
+                    j = i + 1
+                    table_end = i
+
+                    while j < len(records) and cells_found < total_cells:
+                        jtag, jlevel, jdata = records[j]
+                        if jtag == HWPTAG_LIST_HEADER:
+                            cells_found += 1
+                            if cells_found == total_cells:
+                                # 마지막 셀 - 이 셀의 끝까지 찾기
+                                cell_level = jlevel
+                                k = j + 1
+                                while k < len(records):
+                                    ktag, klevel, kdata = records[k]
+                                    if (
+                                        klevel <= cell_level
+                                        and ktag == HWPTAG_LIST_HEADER
+                                    ):
+                                        break
+                                    if klevel < cell_level:
+                                        break
+                                    k += 1
+                                table_end = k - 1
+                                break
+                        j += 1
+
+                    if table_end <= table_start:
+                        table_end = j - 1 if j > i else i
+
+                    table_ranges[table_start] = (table_start, table_end)
+                    i = table_end + 1
+                    continue
+
+            i += 1
+
+        return table_ranges
+
+    def _extract_table_at(
+        self,
+        records: List[Tuple[int, int, bytes]],
+        table_record_idx: int,
+        options: ExtractOptions,
+    ) -> Optional[TableData]:
+        tag_id, level, record_data = records[table_record_idx]
+        if tag_id != HWPTAG_TABLE:
+            return None
+
+        table_info = self._parse_table_record(record_data)
+        if not table_info:
+            return None
+
+        rows, cols, row_counts = table_info
+        total_cells = sum(row_counts)
+
+        cells_text = []
+        cell_idx = 0
+        j = table_record_idx + 1
+        note_section_level = None
+
+        while j < len(records) and cell_idx < total_cells:
+            cell_tag, cell_level, cell_data = records[j]
+
+            if note_section_level is not None:
+                if cell_level <= note_section_level:
+                    note_section_level = None
+                else:
+                    j += 1
+                    continue
+
+            if cell_tag == HWPTAG_CTRL_HEADER:
+                ctrl_id = self._read_ctrl_id(cell_data)
+                if ctrl_id in (CTRL_ID_FOOTNOTE, CTRL_ID_ENDNOTE):
+                    note_section_level = cell_level
+                    j += 1
+                    continue
+
+            if cell_tag == HWPTAG_LIST_HEADER:
+                cell_text = self._extract_cell_text(records, j, options)
+                cells_text.append(cell_text)
+                cell_idx += 1
+            j += 1
+
+        if cells_text:
+            return self._build_table_data(rows, cols, row_counts, cells_text)
+        return None
 
     def _decode_paragraph_with_notes(
         self,
@@ -917,6 +1053,100 @@ class HWP5Reader:
                 chars.append(chr(code))
         return "".join(chars)
 
+    def _decode_cell_paragraph_with_markers(
+        self,
+        record_data: bytes,
+        records: List[Tuple[int, int, bytes]],
+    ) -> str:
+        footnote_positions = self._find_note_markers(record_data, CTRL_ID_FOOTNOTE)
+        endnote_positions = self._find_note_markers(record_data, CTRL_ID_ENDNOTE)
+
+        for pos in footnote_positions:
+            self._footnote_counter += 1
+            fn_text = self._find_note_text(
+                records, CTRL_ID_FOOTNOTE, self._footnote_counter
+            )
+            self._footnotes.append(
+                NoteData(
+                    note_type="footnote", number=self._footnote_counter, text=fn_text
+                )
+            )
+
+        for pos in endnote_positions:
+            self._endnote_counter += 1
+            en_text = self._find_note_text(
+                records, CTRL_ID_ENDNOTE, self._endnote_counter
+            )
+            self._endnotes.append(
+                NoteData(
+                    note_type="endnote", number=self._endnote_counter, text=en_text
+                )
+            )
+
+        note_positions = set(footnote_positions + endnote_positions)
+        chars = []
+        i = 0
+        fn_count = 0
+        en_count = 0
+        fn_start = self._footnote_counter - len(footnote_positions)
+        en_start = self._endnote_counter - len(endnote_positions)
+
+        while i < len(record_data) - 1:
+            code = struct.unpack_from("<H", record_data, i)[0]
+
+            if i in footnote_positions:
+                fn_count += 1
+                chars.append(f"[^{fn_start + fn_count}]")
+                i += 2 + EXTENDED_CTRL_EXT_SIZE
+                continue
+            elif i in endnote_positions:
+                en_count += 1
+                chars.append(f"[^e{en_start + en_count}]")
+                i += 2 + EXTENDED_CTRL_EXT_SIZE
+                continue
+
+            i += 2
+            if code < 8:
+                if code == 0:
+                    pass
+                elif code in (2, 3, 4):
+                    if i + 2 <= len(record_data) - 1:
+                        next_code = struct.unpack_from("<H", record_data, i)[0]
+                        if (
+                            0x0020 <= next_code <= 0x007E
+                            or 0xAC00 <= next_code <= 0xD7AF
+                            or 0x3130 <= next_code <= 0x318F
+                            or next_code in (3, 4, 13)
+                            or 15 <= next_code <= 23
+                        ):
+                            pass
+                        else:
+                            i += EXTENDED_CTRL_EXT_SIZE
+                    else:
+                        i += EXTENDED_CTRL_EXT_SIZE
+                else:
+                    i += INLINE_CTRL_EXT_SIZE
+            elif code == 9:
+                chars.append(" ")
+            elif 15 <= code <= 23:
+                if i + 2 <= len(record_data) - 1:
+                    next_code = struct.unpack_from("<H", record_data, i)[0]
+                    if (
+                        0x0020 <= next_code <= 0x007E
+                        or 0xAC00 <= next_code <= 0xD7AF
+                        or 0x3130 <= next_code <= 0x318F
+                        or next_code in (3, 4, 13)
+                        or 15 <= next_code <= 23
+                    ):
+                        pass
+                    else:
+                        i += EXTENDED_CTRL_EXT_SIZE
+                else:
+                    i += EXTENDED_CTRL_EXT_SIZE
+            elif code >= 32 and self._is_valid_char_strict(code):
+                chars.append(chr(code))
+        return "".join(chars)
+
     def _extract_tables_from_section(
         self, data: bytes, options: ExtractOptions
     ) -> List[TableData]:
@@ -989,9 +1219,12 @@ class HWP5Reader:
     ) -> str:
         texts = []
         cell_level = records[start_idx][1]
+        nested_table_start = None
         nested_table_level = None
+        note_section_level = None
 
-        for i in range(start_idx + 1, len(records)):
+        i = start_idx + 1
+        while i < len(records):
             tag_id, level, record_data = records[i]
             if level < cell_level:
                 break
@@ -999,18 +1232,52 @@ class HWP5Reader:
                 break
             if tag_id == HWPTAG_TABLE and level <= cell_level:
                 break
+
+            if note_section_level is not None:
+                if level <= note_section_level:
+                    note_section_level = None
+                else:
+                    i += 1
+                    continue
+
+            if tag_id == HWPTAG_CTRL_HEADER and level > cell_level:
+                ctrl_id = self._read_ctrl_id(record_data)
+                if ctrl_id in (CTRL_ID_FOOTNOTE, CTRL_ID_ENDNOTE):
+                    note_section_level = level
+                    i += 1
+                    continue
+
             if tag_id == HWPTAG_TABLE and level > cell_level:
+                nested_table_start = i
                 nested_table_level = level
+                i += 1
                 continue
+
             if nested_table_level is not None:
                 if level < nested_table_level:
+                    nested_table = self._extract_table_at(
+                        records, nested_table_start, options
+                    )
+                    if nested_table and nested_table.rows:
+                        texts.append(nested_table.to_inline())
                     nested_table_level = None
-                else:
+                    nested_table_start = None
                     continue
+                else:
+                    i += 1
+                    continue
+
             if tag_id == HWPTAG_PARA_TEXT and level > cell_level:
-                text = self._decode_paragraph_plain_for_table(record_data)
+                text = self._decode_cell_paragraph_with_markers(record_data, records)
                 if text.strip():
                     texts.append(text.strip())
+
+            i += 1
+
+        if nested_table_level is not None and nested_table_start is not None:
+            nested_table = self._extract_table_at(records, nested_table_start, options)
+            if nested_table and nested_table.rows:
+                texts.append(nested_table.to_inline())
 
         return " ".join(texts)
 

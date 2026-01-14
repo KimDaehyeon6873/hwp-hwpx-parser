@@ -396,6 +396,15 @@ class HWPXReader:
                 state["memo_ref_parts"].append(elem.text)
             state["texts"].append(elem.text)
 
+        elif tag == "tbl":
+            table_data = self._extract_table(elem)
+            if table_data.rows:
+                table_text = table_data.format(
+                    options.table_style, options.table_delimiter
+                )
+                state["texts"].append("\n" + table_text + "\n")
+            return  # 표 내부 텍스트는 이미 처리됨
+
         elif tag == "pic":
             marker = self._extract_image_marker(elem, options)
             if marker:
@@ -444,20 +453,121 @@ class HWPXReader:
                 self._find_direct_cells(child, cells)
 
     def _extract_cell_text_direct(self, tc_elem: ET.Element) -> str:
-        texts = []
-        self._collect_text_excluding_nested_tables(tc_elem, texts)
-        return " ".join(texts).strip()
+        texts: List[str] = []
+        self._collect_cell_text_with_notes(tc_elem, texts)
+        return "".join(texts).strip()
+
+    def _collect_cell_text_with_notes(self, elem: ET.Element, texts: List[str]) -> None:
+        tag = self._local_name(elem.tag)
+
+        if tag == "tbl":
+            nested_table = self._extract_table(elem)
+            if nested_table.rows:
+                texts.append(nested_table.to_inline())
+            return
+
+        if tag == "footNote":
+            note_number = self._process_footnote(elem)
+            texts.append(f"[^{note_number}]")
+            return
+
+        if tag == "endNote":
+            note_number = self._process_endnote(elem)
+            texts.append(f"[^e{note_number}]")
+            return
+
+        if tag == "t" and elem.text:
+            texts.append(elem.text)
+
+        for child in elem:
+            self._collect_cell_text_with_notes(child, texts)
 
     def _collect_text_excluding_nested_tables(
         self, elem: ET.Element, texts: List[str]
     ) -> None:
         for child in elem:
             tag = self._local_name(child.tag)
-            if tag == "tbl":
+            if tag in ("tbl", "footNote", "endNote"):
                 continue
             if tag == "t" and child.text:
                 texts.append(child.text)
             self._collect_text_excluding_nested_tables(child, texts)
+
+    def _collect_paragraphs_excluding_nested_tables(
+        self, elem: ET.Element, paragraphs: List[str]
+    ) -> None:
+        for child in elem:
+            tag = self._local_name(child.tag)
+            if tag in ("footNote", "endNote"):
+                continue
+            if tag == "tbl":
+                nested_table = self._extract_table(child)
+                if nested_table.rows:
+                    paragraphs.append(nested_table.to_markdown())
+            elif tag == "p":
+                self._process_paragraph_with_nested_tables(child, paragraphs)
+            else:
+                self._collect_paragraphs_excluding_nested_tables(child, paragraphs)
+
+    def _process_paragraph_with_nested_tables(
+        self, p_elem: ET.Element, paragraphs: List[str]
+    ) -> None:
+        """문단 내 중첩 테이블을 포함하여 처리"""
+        para_texts: List[str] = []
+        nested_tables: List[ET.Element] = []
+
+        # 문단 내 모든 중첩 테이블 찾기
+        self._find_nested_tables(p_elem, nested_tables)
+
+        if nested_tables:
+            # 먼저 텍스트 수집 (테이블 제외)
+            self._collect_text_from_element(p_elem, para_texts)
+            if para_texts:
+                para_text = "".join(para_texts).strip()
+                if para_text:
+                    paragraphs.append(para_text)
+            # 중첩 테이블들 추가 (인라인 형식 - 외부 테이블 셀 안에서 마크다운 충돌 방지)
+            for tbl_elem in nested_tables:
+                nested_table = self._extract_table(tbl_elem)
+                if nested_table.rows:
+                    # 중첩 테이블은 인라인 형식으로 변환
+                    paragraphs.append(nested_table.to_inline())
+        else:
+            # 중첩 테이블이 없으면 일반 텍스트 수집
+            self._collect_text_from_element(p_elem, para_texts)
+            if para_texts:
+                para_text = "".join(para_texts).strip()
+                if para_text:
+                    paragraphs.append(para_text)
+
+    def _find_nested_tables(self, elem: ET.Element, tables: List[ET.Element]) -> None:
+        """요소 내 모든 중첩 테이블 찾기"""
+        for child in elem:
+            tag = self._local_name(child.tag)
+            if tag == "tbl":
+                tables.append(child)
+            else:
+                self._find_nested_tables(child, tables)
+
+    def _collect_text_from_element(self, elem: ET.Element, texts: List[str]) -> None:
+        """요소에서 텍스트만 수집 (중첩 테이블, 각주/미주 제외)"""
+        tag = self._local_name(elem.tag)
+        if tag in ("tbl", "footNote", "endNote"):
+            return
+        if tag == "t" and elem.text:
+            texts.append(elem.text)
+        for child in elem:
+            self._collect_text_from_element(child, texts)
+
+    def _collect_text_from_paragraph(self, elem: ET.Element, texts: List[str]) -> None:
+        """문단 내 텍스트 수집"""
+        for child in elem:
+            tag = self._local_name(child.tag)
+            if tag == "tbl":
+                continue
+            if tag == "t" and child.text:
+                texts.append(child.text)
+            self._collect_text_from_paragraph(child, texts)
 
     def _extract_table_row(self, tr_elem: ET.Element) -> List[str]:
         cells = []
