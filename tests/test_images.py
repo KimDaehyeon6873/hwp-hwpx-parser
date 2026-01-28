@@ -144,22 +144,48 @@ class TestHWP5Images:
         not HAS_HWP5_IMAGES, reason="No HWP5 test files with images available"
     )
     def test_get_images_returns_list(self, hwp_file_with_images):
-        """Placeholder: test get_images() returns list (Task 3)."""
-        pass
+        """Test get_images() returns list of ImageData."""
+        reader = HWP5Reader(hwp_file_with_images)
+        images = reader.get_images()
+
+        assert isinstance(images, list)
+        assert len(images) > 0
+
+        # Verify all items are ImageData instances
+        for img in images:
+            assert isinstance(img, ImageData)
+            assert img.data is not None
+            assert img.format != "unknown"
+            assert img.index >= 0
 
     @pytest.mark.skipif(
         not HAS_HWP5_IMAGES, reason="No HWP5 test files with images available"
     )
     def test_image_has_correct_format(self, hwp_file_with_images):
-        """Placeholder: test extracted images have correct format (Task 3)."""
-        pass
+        """Test extracted images have valid format and data."""
+        reader = HWP5Reader(hwp_file_with_images)
+        images = reader.get_images()
+
+        valid_formats = ["png", "jpg", "gif", "bmp", "emf", "wmf"]
+
+        for img in images:
+            assert img.format in valid_formats
+            assert len(img.data) > 0
+            assert detect_image_format(img.data) == img.format
 
     @pytest.mark.skipif(
         not HAS_HWP5_IMAGES, reason="No HWP5 test files with images available"
     )
     def test_encrypted_file_raises_error(self, hwp_file_with_images):
-        """Placeholder: test encrypted files raise error (Task 3)."""
-        pass
+        """Test encrypted files raise ValueError."""
+        reader = HWP5Reader(hwp_file_with_images)
+
+        if reader.is_encrypted():
+            with pytest.raises(ValueError, match="Encrypted files are not supported"):
+                reader.get_images()
+        else:
+            images = reader.get_images()
+            assert isinstance(images, list)
 
 
 class TestHWPXImages:
@@ -184,19 +210,39 @@ class TestHWPXImages:
         not HAS_HWPX_IMAGES, reason="No HWPX test files with images available"
     )
     def test_get_images_returns_list(self, hwpx_file_with_images):
-        """Placeholder: test get_images() returns list (Task 4)."""
-        pass
+        """Test get_images() returns list of ImageData."""
+        reader = HWPXReader(hwpx_file_with_images)
+        images = reader.get_images()
+
+        assert isinstance(images, list)
+
+        if len(images) > 0:
+            for img in images:
+                assert isinstance(img, ImageData)
+                assert img.data is not None
+                assert img.format != "unknown"
+                assert img.index >= 0
 
     @pytest.mark.skipif(
         not HAS_HWPX_IMAGES, reason="No HWPX test files with images available"
     )
     def test_image_has_correct_format(self, hwpx_file_with_images):
-        """Placeholder: test extracted images have correct format (Task 4)."""
-        pass
+        """Test extracted images have correct format."""
+        reader = HWPXReader(hwpx_file_with_images)
+        images = reader.get_images()
+
+        if len(images) > 0:
+            for img in images:
+                assert img.format in ["png", "jpg", "gif", "bmp", "emf", "wmf"]
+                assert detect_image_format(img.data) == img.format
 
     @pytest.mark.skipif(
         not HAS_HWPX_IMAGES, reason="No HWPX test files with images available"
     )
     def test_encrypted_file_raises_error(self, hwpx_file_with_images):
-        """Placeholder: test encrypted files raise error (Task 4)."""
-        pass
+        """Test encrypted files raise error."""
+        reader = HWPXReader(hwpx_file_with_images)
+
+        if reader.is_encrypted():
+            with pytest.raises(ValueError, match="Encrypted files are not supported"):
+                reader.get_images()
