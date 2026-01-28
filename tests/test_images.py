@@ -188,6 +188,20 @@ class TestHWP5Images:
             images = reader.get_images()
             assert isinstance(images, list)
 
+    def test_test_v2_1_extracts_5_images(self):
+        """Test that test-v2-1.hwp extracts 5 PNG images."""
+        filepath = Path(__file__).parent / "data" / "test-v2-1.hwp"
+        if not filepath.exists():
+            pytest.skip("test-v2-1.hwp not found")
+
+        reader = HWP5Reader(str(filepath))
+        images = reader.get_images()
+
+        assert len(images) == 5, f"Expected 5 images, got {len(images)}"
+        for img in images:
+            assert img.format == "png", f"Expected PNG, got {img.format}"
+            assert len(img.data) > 0, "Image data should not be empty"
+
 
 class TestHWPXImages:
     """Test HWPX image extraction."""
@@ -247,6 +261,20 @@ class TestHWPXImages:
         if reader.is_encrypted():
             with pytest.raises(ValueError, match="Encrypted files are not supported"):
                 reader.get_images()
+
+    def test_test_v2_1_extracts_5_images(self):
+        """Test that test-v2-1.hwpx extracts 5 PNG images."""
+        filepath = Path(__file__).parent / "data" / "test-v2-1.hwpx"
+        if not filepath.exists():
+            pytest.skip("test-v2-1.hwpx not found")
+
+        reader = HWPXReader(str(filepath))
+        images = reader.get_images()
+
+        assert len(images) == 5, f"Expected 5 images, got {len(images)}"
+        for img in images:
+            assert img.format == "png", f"Expected PNG, got {img.format}"
+            assert len(img.data) > 0, "Image data should not be empty"
 
 
 class TestReaderImages:
