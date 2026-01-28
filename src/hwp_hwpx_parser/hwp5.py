@@ -289,15 +289,11 @@ class HWP5Reader:
             if ole.exists(stream_path):
                 data = ole.openstream(stream_path).read()
 
-                if len(data) >= 2 and data[:2] in (
-                    b"\x78\x9c",
-                    b"\x78\xda",
-                    b"\x78\x01",
-                ):
-                    try:
-                        data = zlib.decompress(data, -15)
-                    except zlib.error:
-                        pass
+                # Always try raw deflate decompression (HWP uses raw deflate, not zlib wrapper)
+                try:
+                    data = zlib.decompress(data, -15)
+                except zlib.error:
+                    pass  # Keep original data if decompression fails
 
                 fmt = detect_image_format(data)
                 if fmt != "unknown":
