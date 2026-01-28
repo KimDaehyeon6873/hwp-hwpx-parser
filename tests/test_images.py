@@ -7,7 +7,8 @@ TDD approach: RED -> GREEN -> REFACTOR
 import pytest
 from pathlib import Path
 from hwp_hwpx_parser.models import ImageData, detect_image_format
-from hwp_hwpx_parser import HWP5Reader, HWPXReader
+from hwp_hwpx_parser import HWP5Reader, HWPXReader, Reader
+import tempfile
 
 
 TESTS_DATA_DIR = Path(__file__).parent / "data"
@@ -246,3 +247,70 @@ class TestHWPXImages:
         if reader.is_encrypted():
             with pytest.raises(ValueError, match="Encrypted files are not supported"):
                 reader.get_images()
+
+
+class TestReaderImages:
+    """Test unified Reader image extraction."""
+
+    @pytest.fixture
+    def hwp_file_with_images(self):
+        return TESTS_DATA_DIR / "글상자.hwp"
+
+    @pytest.fixture
+    def hwpx_file_with_images(self):
+        return TESTS_DATA_DIR / "sample1.hwpx"
+
+    @pytest.mark.skipif(
+        not HAS_HWP5_IMAGES, reason="No HWP5 test files with images available"
+    )
+    def test_get_images_hwp5(self, hwp_file_with_images):
+        """Test Reader.get_images() with HWP5 file."""
+        with Reader(hwp_file_with_images) as reader:
+            images = reader.get_images()
+
+            assert isinstance(images, list)
+            assert len(images) > 0
+            for img in images:
+                assert isinstance(img, ImageData)
+                assert img.data is not None
+                assert img.format != "unknown"
+
+    @pytest.mark.skipif(
+        not HAS_HWPX_IMAGES, reason="No HWPX test files with images available"
+    )
+    def test_get_images_hwpx(self, hwpx_file_with_images):
+        """Test Reader.get_images() with HWPX file."""
+        with Reader(hwpx_file_with_images) as reader:
+            images = reader.get_images()
+
+            assert isinstance(images, list)
+
+    @pytest.mark.skipif(
+        not HAS_HWP5_IMAGES, reason="No HWP5 test files with images available"
+    )
+    def test_save_images_creates_files(self, hwp_file_with_images):
+        """Test Reader.save_images() creates files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with Reader(hwp_file_with_images) as reader:
+                saved_paths = reader.save_images(tmpdir)
+
+                assert isinstance(saved_paths, list)
+                assert len(saved_paths) > 0
+                for path in saved_paths:
+                    assert Path(path).exists()
+                    assert Path(path).stat().st_size > 0
+
+    @pytest.mark.skipif(
+        not HAS_HWP5_IMAGES, reason="No HWP5 test files with images available"
+    )
+    def test_save_images_creates_directory(self, hwp_file_with_images):
+        """Test Reader.save_images() creates output directory if not exists."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_dir = Path(tmpdir) / "nested" / "output"
+            assert not output_dir.exists()
+
+            with Reader(hwp_file_with_images) as reader:
+                saved_paths = reader.save_images(output_dir)
+
+                assert output_dir.exists()
+                assert len(saved_paths) > 0

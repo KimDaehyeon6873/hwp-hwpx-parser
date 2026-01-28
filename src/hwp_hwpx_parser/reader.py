@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Union, Optional, List, Any
 from enum import Enum, auto
 
-from .models import ExtractOptions, TableData, ExtractResult
+from .models import ExtractOptions, TableData, ExtractResult, ImageData
 from .hwp5 import HWP5Reader, OLEFILE_AVAILABLE
 from .hwpx import HWPXReader
 
@@ -112,6 +112,23 @@ class Reader:
     def get_memos(self) -> List[Any]:
         reader = self._get_reader()
         return reader.get_memos()
+
+    def get_images(self) -> List[ImageData]:
+        reader = self._get_reader()
+        return reader.get_images()
+
+    def save_images(self, output_dir: Union[str, Path]) -> List[Path]:
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        saved_paths = []
+        for img in self.get_images():
+            filename = img.filename or f"image_{img.index:03d}.{img.format}"
+            filepath = output_path / filename
+            img.save(filepath)
+            saved_paths.append(filepath)
+
+        return saved_paths
 
     def find_all(self, tag: str) -> List[Any]:
         if tag == "table":
