@@ -163,6 +163,7 @@ class HWPXReader:
 
     def extract_text(self, options: Optional[ExtractOptions] = None) -> str:
         options = options or ExtractOptions()
+        self._current_options = options
         self._reset_counters()
         self._load_memo_properties()
 
@@ -573,6 +574,14 @@ class HWPXReader:
             texts.append(f"[^e{note_number}]")
             return
 
+        if tag == "pic":
+            # Handle images inside table cells
+            if hasattr(self, "_current_options"):
+                marker = self._extract_image_marker(elem, self._current_options)
+                if marker:
+                    texts.append(marker)
+            return
+
         if tag == "t" and elem.text:
             texts.append(elem.text)
 
@@ -697,7 +706,7 @@ class HWPXReader:
         for elem in pic_elem.iter():
             tag = self._local_name(elem.tag)
             if tag == "img":
-                ref_id = elem.get("binaryItemIdRef")
+                ref_id = elem.get("binaryItemIDRef")
                 break
 
         filename = None
