@@ -21,6 +21,8 @@ from .models import (
     NoteData,
     ExtractResult,
     MemoData,
+    ImageData,
+    detect_image_format,
 )
 
 logger = logging.getLogger(__name__)
@@ -273,6 +275,41 @@ class HWP5Reader:
             all_tables.extend(tables)
 
         return all_tables
+
+    def get_images(self) -> List[ImageData]:
+        if self.is_encrypted():
+            raise ValueError("Encrypted files are not supported")
+
+        images = []
+        ole = self._open()
+        self._load_bin_data_names()
+
+        for idx, name in enumerate(self._bin_data_names):
+            stream_path = ["BinData", name]
+            if ole.exists(stream_path):
+                data = ole.openstream(stream_path).read()
+
+                if len(data) >= 2 and data[:2] in (
+                    b"\x78\x9c",
+                    b"\x78\xda",
+                    b"\x78\x01",
+                ):
+                    try:
+                        data = zlib.decompress(data, -15)
+                    except zlib.error:
+                        pass
+
+                fmt = detect_image_format(data)
+                if fmt != "unknown":
+                    images.append(
+                        ImageData(
+                            filename=name,
+                            data=data,
+                            index=idx,
+                            format=fmt,
+                        )
+                    )
+        return images
 
     def close(self):
         self._close()

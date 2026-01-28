@@ -13,6 +13,8 @@ from .models import (
     NoteData,
     ExtractResult,
     MemoData,
+    ImageData,
+    detect_image_format,
 )
 
 logger = logging.getLogger(__name__)
@@ -108,6 +110,37 @@ class HWPXReader:
         except Exception:
             pass
 
+    def _get_bin_items_with_path(self) -> Dict[str, Tuple[str, str]]:
+        """Load binItem id -> (filename, src_path) mapping.
+
+        NOTE: Existing _load_bin_item_map() signature must not change for compatibility,
+        so this new method preserves full src path for image extraction.
+
+        Returns:
+            Dict mapping binItem id to (filename, src_path) tuple
+        """
+        result = {}
+        try:
+            zf = self._open()
+            header_path = "Contents/header.xml"
+            if header_path not in zf.namelist():
+                return result
+
+            header_xml = zf.read(header_path)
+            root = ET.fromstring(header_xml)
+
+            for elem in root.iter():
+                tag = self._local_name(elem.tag)
+                if tag == "binItem":
+                    item_id = elem.get("id", "")
+                    src = elem.get("src", "")
+                    if item_id and src:
+                        filename = src.split("/")[-1] if "/" in src else src
+                        result[item_id] = (filename, src)
+        except Exception:
+            pass
+        return result
+
     def _get_image_filename(self, ref_id: str) -> Optional[str]:
         self._load_bin_item_map()
         return self._bin_item_map.get(ref_id)
@@ -190,6 +223,36 @@ class HWPXReader:
                         tables.append(table_data)
 
         return tables
+
+    def get_images(self) -> List[ImageData]:
+        """Extract all images from HWPX file."""
+        if self.is_encrypted():
+            raise ValueError("Encrypted files are not supported")
+
+        bin_items = self._get_bin_items_with_path()
+        images = []
+        zf = self._open()
+
+        for idx, (item_id, (filename, src_path)) in enumerate(bin_items.items()):
+            full_path = (
+                f"Contents/{src_path}"
+                if not src_path.startswith("Contents/")
+                else src_path
+            )
+
+            if full_path in zf.namelist():
+                data = zf.read(full_path)
+                fmt = detect_image_format(data)
+                if fmt != "unknown":
+                    images.append(
+                        ImageData(
+                            filename=filename,
+                            data=data,
+                            index=idx,
+                            format=fmt,
+                        )
+                    )
+        return images
 
     def close(self):
         self._close()
