@@ -6,7 +6,8 @@ Pure Python data models for text extraction results.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, List, Literal, Tuple
+from typing import Optional, List, Literal, Tuple, Union
+from pathlib import Path
 
 
 class TableStyle(Enum):
@@ -249,3 +250,61 @@ def format_image_marker(
             return f"[IMAGE: image_{index:03d}]"
         return "[IMAGE]"
     return "[IMAGE]"
+
+
+def detect_image_format(data: bytes) -> str:
+    """Detect image format by magic bytes.
+
+    Args:
+        data: Binary image data
+
+    Returns:
+        Format string: 'png', 'jpg', 'gif', 'bmp', 'emf', 'wmf', or 'unknown'
+    """
+    if not data or len(data) < 2:
+        return "unknown"
+
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return "gif"
+    if data.startswith(b"BM"):
+        return "bmp"
+    if data.startswith(b"\x01\x00\x00\x00"):
+        return "emf"
+    if data.startswith(b"\xd7\xcd\xc6\x9a"):
+        return "wmf"
+
+    return "unknown"
+
+
+@dataclass
+class ImageData:
+    """Image data model.
+
+    Attributes:
+        filename: Original filename (optional)
+        data: Binary image data
+        index: Index in document (0-based)
+        format: Detected format (png, jpg, gif, bmp, emf, wmf, unknown)
+        width: Image width in pixels (optional)
+        height: Image height in pixels (optional)
+    """
+
+    filename: Optional[str]
+    data: bytes
+    index: int
+    format: str
+    width: Optional[int] = None
+    height: Optional[int] = None
+
+    def save(self, filepath: Union[str, Path]) -> None:
+        """Save image to file.
+
+        Args:
+            filepath: Output file path (str or Path)
+        """
+        path = Path(filepath)
+        path.write_bytes(self.data)
