@@ -230,6 +230,11 @@ class HWPXReader:
             raise ValueError("Encrypted files are not supported")
 
         bin_items = self._get_bin_items_with_path()
+
+        # Fallback: If no binItem elements, scan BinData/ directory directly
+        if not bin_items:
+            return self._get_images_from_bindata_directory()
+
         images = []
         zf = self._open()
 
@@ -252,6 +257,35 @@ class HWPXReader:
                             format=fmt,
                         )
                     )
+        return images
+
+    def _get_images_from_bindata_directory(self) -> List[ImageData]:
+        """Fallback: extract images directly from BinData/ directory."""
+        images = []
+        zf = self._open()
+
+        # Find all files in BinData/ directory
+        bindata_files = sorted(
+            [
+                name
+                for name in zf.namelist()
+                if name.startswith("BinData/") and not name.endswith("/")
+            ]
+        )
+
+        for idx, filepath in enumerate(bindata_files):
+            data = zf.read(filepath)
+            fmt = detect_image_format(data)
+            if fmt != "unknown":
+                filename = filepath.split("/")[-1]
+                images.append(
+                    ImageData(
+                        filename=filename,
+                        data=data,
+                        index=idx,
+                        format=fmt,
+                    )
+                )
         return images
 
     def close(self):
