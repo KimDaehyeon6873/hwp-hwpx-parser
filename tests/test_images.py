@@ -7,9 +7,14 @@ TDD approach: RED -> GREEN -> REFACTOR
 import pytest
 from pathlib import Path
 from hwp_hwpx_parser.models import ImageData, detect_image_format
+from hwp_hwpx_parser import HWP5Reader, HWPXReader
 
 
 TESTS_DATA_DIR = Path(__file__).parent / "data"
+
+# Test file availability flags
+HAS_HWP5_IMAGES = (TESTS_DATA_DIR / "글상자.hwp").exists()
+HAS_HWPX_IMAGES = (TESTS_DATA_DIR / "sample1.hwpx").exists()
 
 
 class TestImageData:
@@ -115,3 +120,83 @@ class TestDetectImageFormat:
     def test_detect_short_data(self):
         """Test short data detection."""
         assert detect_image_format(b"X") == "unknown"
+
+
+class TestHWP5Images:
+    """Test HWP5 image extraction."""
+
+    @pytest.fixture
+    def hwp_file_with_images(self):
+        return TESTS_DATA_DIR / "글상자.hwp"
+
+    @pytest.fixture
+    def sample_notes_file(self):
+        return TESTS_DATA_DIR / "sample_notes.hwp"
+
+    @pytest.mark.skipif(
+        not HAS_HWP5_IMAGES, reason="No HWP5 test files with images available"
+    )
+    def test_hwp5_file_exists(self, hwp_file_with_images):
+        """Test that HWP5 test file exists."""
+        assert hwp_file_with_images.exists()
+
+    @pytest.mark.skipif(
+        not HAS_HWP5_IMAGES, reason="No HWP5 test files with images available"
+    )
+    def test_get_images_returns_list(self, hwp_file_with_images):
+        """Placeholder: test get_images() returns list (Task 3)."""
+        pass
+
+    @pytest.mark.skipif(
+        not HAS_HWP5_IMAGES, reason="No HWP5 test files with images available"
+    )
+    def test_image_has_correct_format(self, hwp_file_with_images):
+        """Placeholder: test extracted images have correct format (Task 3)."""
+        pass
+
+    @pytest.mark.skipif(
+        not HAS_HWP5_IMAGES, reason="No HWP5 test files with images available"
+    )
+    def test_encrypted_file_raises_error(self, hwp_file_with_images):
+        """Placeholder: test encrypted files raise error (Task 3)."""
+        pass
+
+
+class TestHWPXImages:
+    """Test HWPX image extraction."""
+
+    @pytest.fixture
+    def hwpx_file_with_images(self):
+        return TESTS_DATA_DIR / "sample1.hwpx"
+
+    @pytest.fixture
+    def sample_notes_hwpx_file(self):
+        return TESTS_DATA_DIR / "sample_notes.hwpx"
+
+    @pytest.mark.skipif(
+        not HAS_HWPX_IMAGES, reason="No HWPX test files with images available"
+    )
+    def test_hwpx_file_exists(self, hwpx_file_with_images):
+        """Test that HWPX test file exists."""
+        assert hwpx_file_with_images.exists()
+
+    @pytest.mark.skipif(
+        not HAS_HWPX_IMAGES, reason="No HWPX test files with images available"
+    )
+    def test_get_images_returns_list(self, hwpx_file_with_images):
+        """Placeholder: test get_images() returns list (Task 4)."""
+        pass
+
+    @pytest.mark.skipif(
+        not HAS_HWPX_IMAGES, reason="No HWPX test files with images available"
+    )
+    def test_image_has_correct_format(self, hwpx_file_with_images):
+        """Placeholder: test extracted images have correct format (Task 4)."""
+        pass
+
+    @pytest.mark.skipif(
+        not HAS_HWPX_IMAGES, reason="No HWPX test files with images available"
+    )
+    def test_encrypted_file_raises_error(self, hwpx_file_with_images):
+        """Placeholder: test encrypted files raise error (Task 4)."""
+        pass
