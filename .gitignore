@@ -125,3 +125,10 @@ ref/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local / temporary
+.sisyphus/
+tests/data/test/
+
+# Internal dev docs (not for distribution)
+PARSING_STATUS.md
