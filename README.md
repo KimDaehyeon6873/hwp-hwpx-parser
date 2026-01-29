@@ -13,7 +13,7 @@
 - **경량**: 최소 의존성 (`olefile`만 필요)
 - **빠른 시작**: `pip install hwp-hwpx-parser`로 즉시 사용
 - **통합 API**: HWP/HWPX 파일을 동일한 인터페이스로 처리
-- **풍부한 추출**: 텍스트, 표, 각주, 미주, 하이퍼링크, 메모 지원
+- **풍부한 추출**: 텍스트, 표, 이미지, 각주, 미주, 하이퍼링크, 메모 지원
 
 ## 설치
 
@@ -56,6 +56,7 @@ with Reader("document.hwp") as r:
     r.extract_text()                    # 텍스트 추출
     r.extract_text_with_notes()         # 텍스트 + 각주/미주/링크/메모 통합 추출
     r.get_tables()                      # 표 목록
+    r.get_images()                      # 이미지 목록
     r.get_memos()                       # 메모 목록
     r.get_tables_as_markdown()          # 표를 마크다운 형식으로
     r.get_tables_as_csv()               # 표를 CSV 형식으로
@@ -97,6 +98,7 @@ from hwp_hwpx_parser import (
     ExtractOptions,    # 추출 옵션
     TableData,         # 표 데이터
     TableStyle,        # 표 스타일 (INLINE, MARKDOWN, CSV)
+    ImageData,         # 이미지 데이터
     NoteData,          # 각주/미주 데이터
     HyperlinkData,     # 하이퍼링크 데이터
     MemoData,          # 메모 데이터
@@ -110,6 +112,15 @@ print(table.row_count)      # 행 수
 print(table.col_count)      # 열 수
 print(table.to_markdown())  # 마크다운 변환
 print(table.to_csv())       # CSV 변환
+
+# ImageData 사용
+images = reader.get_images()
+for img in images:
+    print(img.filename)     # 파일명 (예: "BIN0001.png")
+    print(img.format)       # 이미지 포맷 (예: "PNG")
+    print(len(img.data))    # 바이너리 데이터 크기
+    with open(img.filename, "wb") as f:
+        f.write(img.data)   # 파일로 저장
 
 # ExtractResult 사용
 result = reader.extract_text_with_notes()
@@ -144,6 +155,8 @@ text = reader.extract_text(options)
 | 텍스트 추출 | ✅ | ✅ |
 | 표 추출 (마크다운) | ✅ | ✅ |
 | 중첩 표 추출 | ✅ | ✅ |
+| 이미지 추출 | ✅ | ✅ |
+| 이미지 위치 마커 | ✅ | ✅ |
 | 각주 추출 | ✅ | ✅ |
 | 미주 추출 | ✅ | ✅ |
 | 표 내 각주/미주 마커 | ✅ | ✅ |
@@ -165,6 +178,33 @@ text = reader.extract_text(options)
 ## 미주
 [^e1]: 이각 변화는 지구에서 관측할 때 태양과 특정 천체 사이의 각도 거리가...
 ```
+
+## 이미지 추출
+
+문서에 포함된 이미지를 추출하고, 텍스트 내 이미지 위치를 마커로 표시합니다:
+
+```python
+from hwp_hwpx_parser import Reader, ExtractOptions, ImageMarkerStyle
+
+with Reader("document.hwp") as r:
+    # 이미지 추출
+    images = r.get_images()
+    for img in images:
+        with open(img.filename, "wb") as f:
+            f.write(img.data)
+    
+    # 이미지 위치 마커 포함 텍스트 추출
+    options = ExtractOptions(image_marker=ImageMarkerStyle.WITH_NAME)
+    text = r.extract_text(options)
+    # 출력: "본문 텍스트 [IMAGE: BIN0001.png] 이어지는 텍스트..."
+```
+
+**ImageMarkerStyle 옵션:**
+- `NONE`: 이미지 마커 생략
+- `SIMPLE`: `[IMAGE]` 형태로 표시
+- `WITH_NAME`: `[IMAGE: 파일명]` 형태로 표시 (이미지 파일 참조 추적 가능)
+
+같은 이미지가 여러 번 사용된 경우에도 정확히 어떤 파일을 참조하는지 추적됩니다.
 
 ## 문서 편집이 필요하다면
 

@@ -41,6 +41,7 @@ with Reader("document.hwp") as r:
     r.extract_text(options)              # str
     r.extract_text_with_notes(options)   # ExtractResult
     r.get_tables(options)                # List[TableData]
+    r.get_images()                       # List[ImageData]
     r.get_memos()                        # List[MemoData]
     r.get_tables_as_markdown()           # List[str]
     r.get_tables_as_csv(delimiter=",")   # List[str]
@@ -106,6 +107,22 @@ table.to_csv(",")   # str
 table.to_inline()   # str (all cells joined by space)
 ```
 
+### ImageData
+
+```python
+from hwp_hwpx_parser import ImageData
+
+images = reader.get_images()
+for img in images:
+    img.filename    # str - e.g., "BIN0001.png"
+    img.format      # str - e.g., "PNG", "JPEG", "BMP"
+    img.data        # bytes - raw image data
+    
+    # Save to file
+    with open(img.filename, "wb") as f:
+        f.write(img.data)
+```
+
 ### ExtractResult
 
 ```python
@@ -150,6 +167,8 @@ link.text  # str - Display text
 link.url   # str - URL
 ```
 
+**Note**: Hyperlinks are extracted into `result.hyperlinks` list, not marked in text. The display text appears as normal text in `result.text`.
+
 ## Common Patterns
 
 ### Extract all text from HWP/HWPX
@@ -193,12 +212,39 @@ with Reader("document.hwp") as r:
         print("Cannot read encrypted file")
 ```
 
+### Extract images and markers
+
+```python
+from hwp_hwpx_parser import Reader, ExtractOptions, ImageMarkerStyle
+import re
+
+with Reader("document.hwp") as r:
+    # Extract all images
+    images = r.get_images()
+    for img in images:
+        with open(img.filename, "wb") as f:
+            f.write(img.data)
+    
+    # Extract text with image position markers
+    options = ExtractOptions(image_marker=ImageMarkerStyle.WITH_NAME)
+    text = r.extract_text(options)
+    # Output: "text [IMAGE: BIN0001.png] more text..."
+    
+    # Count image markers (same image can appear multiple times)
+    markers = re.findall(r'\[IMAGE[^\]]*\]', text)
+    print(f"Image markers: {len(markers)}")  # May differ from len(images)
+```
+
+**Note**: Image marker count may exceed unique image count if same image is reused in document.
+
 ## File Format Support
 
 | Feature | HWP | HWPX |
 |---------|-----|------|
 | Text extraction | Yes | Yes |
 | Tables | Yes | Yes |
+| Images | Yes | Yes |
+| Image markers | Yes | Yes |
 | Footnotes | Yes | Yes |
 | Endnotes | Yes | Yes |
 | Hyperlinks | Yes | Yes |

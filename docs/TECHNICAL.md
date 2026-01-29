@@ -27,7 +27,10 @@ HWPX 파일은 표준 ZIP 아카이브이며, 내부의 XML 파일들을 통해 
     - `<hp:t>`: 실제 텍스트 내용.
 - **객체 및 특수 요소**:
     - `<hp:tbl>`: 표 (Table). 하위에 `<hp:tr>`(행), `<hp:tc>`(열) 구조를 가집니다.
-    - `<hp:pic>`: 그림 (Picture). `<hp:img>` 요소의 `binaryItemIdRef` 속성을 통해 `header.xml`의 `binItem`과 연결됩니다.
+    - `<hp:pic>`: 그림 (Picture). `<hp:img>` 요소의 `binaryItemIDRef` 속성을 통해 이미지 파일을 참조합니다.
+- **이미지 참조 방식**:
+    1. `header.xml`의 `<binItem>` 요소에 id와 src 매핑이 있는 경우: `binItem.id` → `binItem.src`
+    2. `<binItem>` 요소가 없는 경우: `binaryItemIDRef` 값으로 `BinData/` 폴더에서 직접 매칭 (예: `image1` → `BinData/image1.bmp`)
 - **주석 (Notes)**:
     - `<hp:footNote>`: 각주.
     - `<hp:endNote>`: 미주.
@@ -196,6 +199,109 @@ if code == 17:
     3. CTRL_ID가 ` osg`인 경우에만 `[IMAGE]` 마커 출력
     4. BinData 스트림에 해당 이미지 파일이 존재하는지 추가 확인
 
+#### 3.4.1 GSO START/END 마커 구분
+
+**중요**: 각 GSO 객체는 텍스트 스트림에 START와 END 두 개의 code=11 마커를 가집니다.
+
+```
+GSO START: 0b00 67736f20 0000000000000000 ...
+           ^    ^" osg"  ^8-byte ext
+           code=11
+
+GSO END:   0b00 ???????? ...
+           ^    ^invalid ctrl_id (이전 GSO의 연속 데이터)
+           code=11
+```
+
+**바이너리 구조 분석:**
+- GSO START: ctrl_id가 유효한 ASCII 문자열 (예: ` osg`, ` lbt`)
+- GSO END: ctrl_id 위치에 이전 GSO의 확장 데이터 일부가 위치하여 유효하지 않은 값
+
+**처리 로직:**
+```python
+if code == 11:  # GSO 제어 코드
+    ctrl_id = struct.unpack_from("<I", record_data, i)[0]
+    
+    if ctrl_id == CTRL_ID_GSO:
+        # GSO START - 이미지 마커 출력, 12바이트 스킵
+        chars.append("[IMAGE]")
+        i += EXTENDED_CTRL_EXT_SIZE
+    elif self._is_valid_ctrl_id(ctrl_id):
+        # 테이블 등 다른 유효 컨트롤 - 마커 없이 12바이트 스킵
+        i += EXTENDED_CTRL_EXT_SIZE
+    else:
+        # GSO END - 유효하지 않은 ctrl_id, 스킵하지 않음
+        pass
+```
+
+**이 처리가 없을 경우 발생하는 문제:**
+- 단락당 여러 이미지가 있을 때 이미지 개수가 2배로 카운트됨
+- 테이블 앞에 CJK 문자("氠瑢" 등) 출력 - ctrl_id `tbl ` (0x74626C20)이 텍스트로 해석됨
+
+### 3.4.1 이미지 BinData 참조 매핑
+
+HWP5 파일에서 이미지가 어떤 BinData 파일을 참조하는지 정확히 추적하기 위한 구현입니다.
+
+**BinData 매핑 테이블 (DocInfo 스트림):**
+
+`HWPTAG_BIN_DATA` (tag=18) 레코드에서 storage_id와 파일 확장자를 추출합니다:
+
+```
+┌─────────────────────────────────────────────────┐
+│  flags (2B)  │  storage_id (2B)  │  ext_len (2B)  │  ext (N*2B)  │
+└─────────────────────────────────────────────────┘
+```
+
+| 필드 | 크기 | 설명 |
+|------|------|------|
+| flags | 2B | 저장 타입 등 플래그 |
+| storage_id | 2B | BinData 식별자 |
+| ext_len | 2B | 확장자 문자열 길이 |
+| ext | N*2B | 확장자 (UTF-16LE, 예: "bmp") |
+
+파일명 생성: `BIN{storage_id:04X}.{ext}` (예: storage_id=1, ext="bmp" → "BIN0001.bmp")
+
+**이미지 참조 추출 (Section 스트림):**
+
+`HWPTAG_SHAPE_COMPONENT_PICTURE` (tag=85) 레코드에서 bindata_id를 추출합니다:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  BorderLine (12B)  │  Rect (32B)  │  Clip (16B)  │  ...  │  PictureInfo (5B)  │
+└──────────────────────────────────────────────────────────────────┘
+                                                              ↓
+                                               ┌─────────────────────────────────┐
+                                               │ brightness │ contrast │ effect │ bindata_id │
+                                               │    (1B)    │   (1B)   │  (1B)  │    (2B)    │
+                                               └─────────────────────────────────┘
+                                                     offset 68        offset 71
+```
+
+- `bindata_id`는 tag=85 레코드의 **offset 71**에서 UINT16 (little-endian)으로 읽음
+- 이 값이 DocInfo의 storage_id와 매칭되어 실제 파일명 결정
+
+**처리 흐름:**
+
+1. DocInfo에서 `HWPTAG_BIN_DATA` 파싱 → `{storage_id: filename}` 매핑 테이블 구축
+2. Section에서 `HWPTAG_SHAPE_COMPONENT_PICTURE` 파싱 → bindata_id 목록 추출 (출현 순서대로)
+3. 이미지 마커 생성 시 bindata_id로 실제 파일명 조회
+
+**같은 이미지 재사용 처리:**
+
+문서에서 같은 이미지가 여러 번 사용되면:
+- BinData 파일은 1개 (예: BIN0001.bmp)
+- `[IMAGE]` 마커는 사용 횟수만큼 생성
+- 각 마커가 어떤 파일을 참조하는지 정확히 추적됨
+
+```
+예: 10개 마커, 5개 이미지 파일
+[IMAGE: BIN0001.bmp]  ← image1
+[IMAGE: BIN0002.bmp]  ← image2
+[IMAGE: BIN0002.bmp]  ← image2 (재사용)
+[IMAGE: BIN0001.bmp]  ← image1 (재사용)
+...
+```
+
 ### 3.5 컨트롤 식별자 (CTRL_ID) 및 추출 로직
 `CTRL_HEADER` 레코드의 앞 4바이트는 컨트롤의 종류를 나타냅니다 (리틀 엔디안).
 - `  nf` (각주), `  ne` (미주): 주석 텍스트는 해당 컨트롤 이후에 나타나는 `PARA_TEXT` 레코드들을 통해 추출합니다.
@@ -261,7 +367,30 @@ HWPTAG_PARA_TEXT (다음 본문)            level=0
 3. 각 셀 내의 `HWPTAG_PARA_TEXT`를 수집하여 셀 텍스트를 구성합니다.
 4. 추출된 데이터를 `TableData` 모델로 변환하여 Markdown, CSV 등의 형식으로 출력할 수 있습니다.
 
-### 5.3 표 내 각주/미주 처리
+### 5.3 이미지 추출 로직
+
+#### HWP5
+
+1. **BinData 스트림 접근**: OLE 파일의 `BinData/` 스토리지에서 이미지 파일 목록 조회
+2. **압축 해제**: 각 파일은 raw deflate 압축 (zlib wbits=-15)으로 저장됨
+3. **포맷 감지**: 매직 바이트로 이미지 포맷 자동 감지 (PNG, JPEG, GIF, BMP, EMF, WMF)
+4. **파일명 매핑**: DocInfo의 BinData 레코드에서 storage_id와 확장자 조합
+
+```python
+# BinData 압축 해제
+try:
+    decompressed = zlib.decompress(data, -15)  # raw deflate
+except:
+    decompressed = data  # 압축되지 않은 경우
+```
+
+#### HWPX
+
+1. **ZIP 아카이브 접근**: `BinData/` 폴더 내 파일 목록 조회
+2. **직접 읽기**: ZIP 내부 파일은 압축 해제 없이 직접 읽기 가능
+3. **header.xml 참조**: `<binItem>` 요소가 있으면 id→src 매핑, 없으면 폴더에서 직접 탐색
+
+### 5.4 표 내 각주/미주 처리
 
 표 셀 내에 각주/미주가 포함된 경우 특별한 처리가 필요합니다.
 
@@ -307,7 +436,7 @@ if cell_tag == HWPTAG_CTRL_HEADER:
 - 셀 순서 정상 유지
 - 노트 내용은 문서 하단에 별도 출력
 
-### 5.3 중첩 필드 및 제어 코드 처리
+### 5.5 중첩 필드 및 제어 코드 처리
 HWP 파일은 필드 내에 또 다른 필드가 존재하거나, 제어 코드가 복합적으로 나타날 수 있습니다. 파서는 상태 머신(State Machine) 또는 큐(Queue)를 사용하여 현재 처리 중인 하이퍼링크나 메모의 상태를 관리하며 데이터를 정확히 매칭합니다.
 
 ---
