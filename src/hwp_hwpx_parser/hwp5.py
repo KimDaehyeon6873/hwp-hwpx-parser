@@ -1061,6 +1061,7 @@ class HWP5Reader:
             or 0x3000 <= code <= 0x303F  # CJK Symbols and Punctuation
             or 0x3130 <= code <= 0x318F  # Hangul Compatibility Jamo
             or 0x3200 <= code <= 0x32FF  # Enclosed CJK Letters (㉠, ㉡, ㉢, ㈀)
+            or 0x4E00 <= code <= 0x9FFF  # CJK Unified Ideographs (한자)
             or 0xAC00 <= code <= 0xD7AF  # Hangul Syllables
             or 0xFF00 <= code <= 0xFFEF  # Halfwidth and Fullwidth Forms
         )
@@ -1093,6 +1094,11 @@ class HWP5Reader:
                     i += INLINE_CTRL_EXT_SIZE
             elif code == 9:
                 chars.append(" ")
+            elif code == 11:
+                if i + 4 <= len(record_data):
+                    ctrl_id = struct.unpack_from("<I", record_data, i)[0]
+                    if self._is_valid_ctrl_id(ctrl_id):
+                        i += EXTENDED_CTRL_EXT_SIZE
             elif 15 <= code <= 23:
                 if i + 2 <= len(record_data) - 1:
                     next_code = struct.unpack_from("<H", record_data, i)[0]
@@ -1140,6 +1146,11 @@ class HWP5Reader:
                     i += INLINE_CTRL_EXT_SIZE
             elif code == 9:
                 chars.append(" ")
+            elif code == 11:
+                if i + 4 <= len(record_data):
+                    ctrl_id = struct.unpack_from("<I", record_data, i)[0]
+                    if self._is_valid_ctrl_id(ctrl_id):
+                        i += EXTENDED_CTRL_EXT_SIZE
             elif 15 <= code <= 23:
                 if i + 2 <= len(record_data) - 1:
                     next_code = struct.unpack_from("<H", record_data, i)[0]
