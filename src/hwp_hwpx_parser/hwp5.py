@@ -1027,44 +1027,91 @@ class HWP5Reader:
     def _is_valid_char(self, code: int) -> bool:
         return (
             0x0020 <= code <= 0x007E  # Basic Latin
-            or 0x00A0 <= code <= 0x00FF  # Latin-1 Supplement
+            or 0x00A0 <= code <= 0x024F  # Latin-1/Extended-A/Extended-B
+            or 0x0250 <= code <= 0x02AF  # IPA Extensions
+            or 0x0370 <= code <= 0x03FF  # Greek and Coptic
+            or 0x0400 <= code <= 0x052F  # Cyrillic/Supplement
+            or 0x0530 <= code <= 0x058F  # Armenian
+            or 0x0590 <= code <= 0x05FF  # Hebrew
+            or 0x0600 <= code <= 0x06FF  # Arabic
+            or 0x0700 <= code <= 0x074F  # Syriac
+            or 0x0780 <= code <= 0x07BF  # Thaana
+            or 0x0900 <= code <= 0x097F  # Devanagari
+            or 0x0980 <= code <= 0x09FF  # Bengali
+            or 0x0A00 <= code <= 0x0A7F  # Gurmukhi
+            or 0x0A80 <= code <= 0x0AFF  # Gujarati
+            or 0x0B00 <= code <= 0x0B7F  # Oriya
+            or 0x0B80 <= code <= 0x0BFF  # Tamil
+            or 0x0C00 <= code <= 0x0C7F  # Telugu
+            or 0x0C80 <= code <= 0x0CFF  # Kannada
+            or 0x0D00 <= code <= 0x0D7F  # Malayalam
+            or 0x0D80 <= code <= 0x0DFF  # Sinhala
+            or 0x0E00 <= code <= 0x0E7F  # Thai
+            or 0x0E80 <= code <= 0x0EFF  # Lao
+            or 0x0F00 <= code <= 0x0FFF  # Tibetan
+            or 0x1000 <= code <= 0x109F  # Myanmar
+            or 0x10A0 <= code <= 0x10FF  # Georgian
             or 0x1100 <= code <= 0x11FF  # Hangul Jamo
+            or 0x1200 <= code <= 0x137F  # Ethiopic
+            or 0x13A0 <= code <= 0x13FF  # Cherokee
+            or 0x1400 <= code <= 0x167F  # Canadian Aboriginal
+            or 0x1680 <= code <= 0x169F  # Ogham
+            or 0x16A0 <= code <= 0x16FF  # Runic
+            or 0x1780 <= code <= 0x17FF  # Khmer
+            or 0x1800 <= code <= 0x18AF  # Mongolian
+            or 0x1E00 <= code <= 0x1EFF  # Latin Extended Additional
+            or 0x1F00 <= code <= 0x1FFF  # Greek Extended
             or 0x2000 <= code <= 0x206F  # General Punctuation
-            or 0x2190 <= code <= 0x21FF  # Arrows (→, ⇨, ←, ↑, ↓)
-            or 0x2200 <= code <= 0x22FF  # Mathematical Operators (⋅, ×, ÷, ±)
+            or 0x2070 <= code <= 0x209F  # Superscripts/Subscripts
+            or 0x20A0 <= code <= 0x20CF  # Currency Symbols
+            or 0x2100 <= code <= 0x214F  # Letterlike Symbols
+            or 0x2150 <= code <= 0x218F  # Number Forms
+            or 0x2190 <= code <= 0x21FF  # Arrows
+            or 0x2200 <= code <= 0x22FF  # Mathematical Operators
             or 0x2300 <= code <= 0x23FF  # Miscellaneous Technical
-            or 0x2460 <= code <= 0x24FF  # Enclosed Alphanumerics (①, ②, ③)
+            or 0x2400 <= code <= 0x243F  # Control Pictures
+            or 0x2460 <= code <= 0x24FF  # Enclosed Alphanumerics
             or 0x2500 <= code <= 0x257F  # Box Drawing
-            or 0x25A0 <= code <= 0x25FF  # Geometric Shapes (■, □, ●, ○)
+            or 0x2580 <= code <= 0x259F  # Block Elements
+            or 0x25A0 <= code <= 0x25FF  # Geometric Shapes
             or 0x2600 <= code <= 0x26FF  # Miscellaneous Symbols
+            or 0x2700 <= code <= 0x27BF  # Dingbats
+            or 0x27C0 <= code <= 0x27EF  # Misc Mathematical Symbols-A
+            or 0x27F0 <= code <= 0x27FF  # Supplemental Arrows-A
+            or 0x2800 <= code <= 0x28FF  # Braille Patterns
+            or 0x2900 <= code <= 0x297F  # Supplemental Arrows-B
+            or 0x2980 <= code <= 0x29FF  # Misc Mathematical Symbols-B
+            or 0x2A00 <= code <= 0x2AFF  # Supplemental Math Operators
+            or 0x2E80 <= code <= 0x2EFF  # CJK Radicals Supplement
+            or 0x2F00 <= code <= 0x2FDF  # Kangxi Radicals
             or 0x3000 <= code <= 0x303F  # CJK Symbols and Punctuation
+            or 0x3040 <= code <= 0x309F  # Hiragana
+            or 0x30A0 <= code <= 0x30FF  # Katakana
+            or 0x3100 <= code <= 0x312F  # Bopomofo
             or 0x3130 <= code <= 0x318F  # Hangul Compatibility Jamo
-            or 0x3200 <= code <= 0x32FF  # Enclosed CJK Letters (㉠, ㉡, ㉢, ㈀)
-            or 0x4E00 <= code <= 0x9FFF  # CJK Unified Ideographs (한자)
+            or 0x3190 <= code <= 0x319F  # Kanbun
+            or 0x31A0 <= code <= 0x31BF  # Bopomofo Extended
+            or 0x31F0 <= code <= 0x31FF  # Katakana Phonetic Extensions
+            or 0x3200 <= code <= 0x32FF  # Enclosed CJK Letters
+            or 0x3300 <= code <= 0x33FF  # CJK Compatibility
+            or 0x3400 <= code <= 0x4DBF  # CJK Unified Ideographs Ext A
+            or 0x4E00 <= code <= 0x9FFF  # CJK Unified Ideographs
+            or 0xA000 <= code <= 0xA48F  # Yi Syllables
+            or 0xA490 <= code <= 0xA4CF  # Yi Radicals
             or 0xAC00 <= code <= 0xD7AF  # Hangul Syllables
+            or 0xF900 <= code <= 0xFAFF  # CJK Compatibility Ideographs
+            or 0xFB00 <= code <= 0xFB4F  # Alphabetic Presentation Forms
+            or 0xFB50 <= code <= 0xFDFF  # Arabic Presentation Forms-A
+            or 0xFE00 <= code <= 0xFE0F  # Variation Selectors
+            or 0xFE20 <= code <= 0xFE2F  # Combining Half Marks
+            or 0xFE30 <= code <= 0xFE4F  # CJK Compatibility Forms
+            or 0xFE50 <= code <= 0xFE6F  # Small Form Variants
+            or 0xFE70 <= code <= 0xFEFF  # Arabic Presentation Forms-B
             or 0xFF00 <= code <= 0xFFEF  # Halfwidth and Fullwidth Forms
         )
 
     def _is_valid_char_strict(self, code: int) -> bool:
-        return (
-            0x0020 <= code <= 0x007E  # Basic Latin
-            or 0x00A0 <= code <= 0x00FF  # Latin-1 Supplement
-            or 0x1100 <= code <= 0x11FF  # Hangul Jamo
-            or 0x2000 <= code <= 0x206F  # General Punctuation
-            or 0x2190 <= code <= 0x21FF  # Arrows (→, ⇨, ←, ↑, ↓)
-            or 0x2200 <= code <= 0x22FF  # Mathematical Operators (⋅, ×, ÷, ±)
-            or 0x2300 <= code <= 0x23FF  # Miscellaneous Technical
-            or 0x2460 <= code <= 0x24FF  # Enclosed Alphanumerics (①, ②, ③)
-            or 0x2500 <= code <= 0x257F  # Box Drawing
-            or 0x25A0 <= code <= 0x25FF  # Geometric Shapes (■, □, ●, ○)
-            or 0x2600 <= code <= 0x26FF  # Miscellaneous Symbols
-            or 0x3000 <= code <= 0x303F  # CJK Symbols and Punctuation
-            or 0x3130 <= code <= 0x318F  # Hangul Compatibility Jamo
-            or 0x3200 <= code <= 0x32FF  # Enclosed CJK Letters (㉠, ㉡, ㉢, ㈀)
-            or 0x4E00 <= code <= 0x9FFF  # CJK Unified Ideographs (한자)
-            or 0xAC00 <= code <= 0xD7AF  # Hangul Syllables
-            or 0xFF00 <= code <= 0xFFEF  # Halfwidth and Fullwidth Forms
-        )
+        return self._is_valid_char(code)
 
     def _decode_paragraph_plain(self, record_data: bytes) -> str:
         chars = []

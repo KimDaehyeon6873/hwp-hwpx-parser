@@ -188,18 +188,18 @@ class TestHWP5Images:
             images = reader.get_images()
             assert isinstance(images, list)
 
-    def test_test_v2_1_extracts_5_images(self):
-        """Test that test-v2-1.hwp extracts 5 PNG images."""
-        filepath = Path(__file__).parent / "data" / "test-v2-1.hwp"
+    def test_test_v2_5_extracts_11_images(self):
+        """Test that test-v2-5.hwp extracts 11 images."""
+        filepath = Path(__file__).parent / "data" / "test" / "test-v2-5.hwp"
         if not filepath.exists():
-            pytest.skip("test-v2-1.hwp not found")
+            pytest.skip("test-v2-5.hwp not found")
 
         reader = HWP5Reader(str(filepath))
         images = reader.get_images()
 
-        assert len(images) == 5, f"Expected 5 images, got {len(images)}"
+        assert len(images) == 11, f"Expected 11 images, got {len(images)}"
         for img in images:
-            assert img.format == "png", f"Expected PNG, got {img.format}"
+            assert img.format in ["png", "bmp", "jpg", "gif", "emf", "wmf"]
             assert len(img.data) > 0, "Image data should not be empty"
 
 
@@ -262,18 +262,18 @@ class TestHWPXImages:
             with pytest.raises(ValueError, match="Encrypted files are not supported"):
                 reader.get_images()
 
-    def test_test_v2_1_extracts_5_images(self):
-        """Test that test-v2-1.hwpx extracts 5 PNG images."""
-        filepath = Path(__file__).parent / "data" / "test-v2-1.hwpx"
+    def test_test_v2_5_extracts_11_images(self):
+        """Test that test-v2-5.hwpx extracts 11 images."""
+        filepath = Path(__file__).parent / "data" / "test" / "test-v2-5.hwpx"
         if not filepath.exists():
-            pytest.skip("test-v2-1.hwpx not found")
+            pytest.skip("test-v2-5.hwpx not found")
 
         reader = HWPXReader(str(filepath))
         images = reader.get_images()
 
-        assert len(images) == 5, f"Expected 5 images, got {len(images)}"
+        assert len(images) == 11, f"Expected 11 images, got {len(images)}"
         for img in images:
-            assert img.format == "png", f"Expected PNG, got {img.format}"
+            assert img.format in ["png", "bmp", "jpg", "gif", "emf", "wmf"]
             assert len(img.data) > 0, "Image data should not be empty"
 
 
