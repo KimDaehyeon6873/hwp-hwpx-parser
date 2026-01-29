@@ -143,7 +143,22 @@ class HWPXReader:
 
     def _get_image_filename(self, ref_id: str) -> Optional[str]:
         self._load_bin_item_map()
-        return self._bin_item_map.get(ref_id)
+        if ref_id in self._bin_item_map:
+            return self._bin_item_map[ref_id]
+
+        try:
+            zf = self._open()
+            for name in zf.namelist():
+                if name.startswith("BinData/"):
+                    filename = name.split("/")[-1]
+                    base_name = (
+                        filename.rsplit(".", 1)[0] if "." in filename else filename
+                    )
+                    if base_name == ref_id:
+                        return filename
+        except Exception:
+            pass
+        return None
 
     def _local_name(self, tag: str) -> str:
         if "}" in tag:
