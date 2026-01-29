@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2025-01-29
+
+**첫 정식 릴리스** - 순수 Python HWP/HWPX 파서
+
+### Features
+- **텍스트 추출**: HWP5 바이너리 및 HWPX XML 포맷 완벽 지원
+- **표 추출**: 마크다운/CSV/인라인 형식 변환, 중첩 테이블 지원
+- **이미지 추출**: BinData 압축 해제, 위치 마커 삽입
+- **각주/미주**: 본문 마커 `[^N]`/`[^eN]` + 내용 분리 추출
+- **하이퍼링크**: URL 및 표시 텍스트 추출 (`result.hyperlinks`)
+- **메모**: 메모 내용 및 참조 텍스트 추출
+- **암호화 감지**: 암호화된 파일 자동 감지
+
+### Fixed (since 0.1.2)
+- HWP5 단락당 여러 이미지 추출 시 개수 불일치 문제 수정
+  - GSO START/END 마커 구분: 유효한 ctrl_id (START) vs 무효한 ctrl_id (END)
+  - HWP5와 HWPX 이미지 마커 개수 완벽 일치
+- HWP5 테이블 앞에 잘못된 CJK 문자("氠瑢") 출력되던 문제 수정
+  - 테이블 컨트롤 ID `tbl ` (0x74626C20)가 텍스트로 해석되던 버그
+  - `_is_valid_ctrl_id()` 함수로 유효한 컨트롤 ID 판별 후 12바이트 스킵
+- HWP5 vs HWPX 텍스트 길이 차이 대폭 개선 (580자 → 29자)
+
+### Verified (test-v2-4 기준)
+| 항목 | HWP5 | HWPX | 상태 |
+|------|------|------|------|
+| 텍스트 길이 | 10,202자 | 10,173자 | ✅ |
+| 마크다운 테이블 | 13개 | 13개 | ✅ |
+| 각주 | 5개 | 5개 | ✅ |
+| 미주 | 4개 | 4개 | ✅ |
+| 메모 | 1개 | 1개 | ✅ |
+| 이미지 | 22개 | 22개 | ✅ |
+| 하이퍼링크 | 2개 | 2개 | ✅ |
+
+---
+
 ## [0.1.2] - 2025-01-08
 
 ### Fixed
@@ -112,7 +147,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | 버전 | 날짜 | 주요 변경 |
 |------|------|-----------|
-| 0.1.0 | 2025-01-XX | 최초 릴리스 |
+| 1.0.0 | 2025-01-29 | 🎉 첫 정식 릴리스 - HWP5/HWPX 파싱 완성 |
+| 0.1.2 | 2025-01-08 | 이미지/테이블 GSO 구분, 메모 추출 개선 |
+| 0.1.0 | 2025-01-XX | 최초 베타 릴리스 |
 
 ---
 

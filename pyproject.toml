@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["hwp", "hwpx", "korean", "word-processor", "parser", "text-extraction"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
 
     "Operating System :: OS Independent",
@@ -30,6 +30,7 @@ classifiers = [
 ]
 dependencies = [
     "olefile>=0.46",
+    "python-docx>=1.0.0",
 ]
 
 [project.urls]
